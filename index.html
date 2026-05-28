@@ -6,11 +6,11 @@
     <title>מערכת איתור נתונים - עיצוב בהיר</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React & ReactDOM -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Babel for JSX -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- React & ReactDOM (Cloudflare CDN - More stable for GitHub Pages) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+    <!-- Babel for JSX (Cloudflare CDN) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js" crossorigin="anonymous"></script>
     <style>
         body { background-color: #f8fafc; color: #1e293b; font-family: system-ui, -apple-system, sans-serif; }
         .custom-scrollbar::-webkit-scrollbar { width: 8px; }
@@ -25,24 +25,25 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- SVGs מובנים למניעת תקלות טעינה ---
-        const Icons = {
-            Database: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>,
-            Upload: () => <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path><path d="M12 12v9"></path><path d="m16 16-4-4-4 4"></path></svg>,
-            Search: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>,
-            X: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>,
-            User: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>,
-            Shield: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"></path></svg>,
-            MapPin: () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-        };
+        // --- SVGs - מומרים לרכיבים עצמאיים למניעת שגיאות רינדור ---
+        const DatabaseIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>;
+        const UploadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path><path d="M12 12v9"></path><path d="m16 16-4-4-4 4"></path></svg>;
+        const SearchIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>;
+        const XIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>;
+        const UserIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>;
+        const ShieldIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"></path></svg>;
+        const MapPinIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>;
+
+        // פונקציית הגנה מפני קריסות Regex בעת הקלדת תווים מיוחדים
+        const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
         const Highlight = ({ text, query }) => {
             if (!query || !text) return <span>{text}</span>;
             const terms = query.trim().split(/\s+/).filter(t => t);
             if (terms.length === 0) return <span>{text}</span>;
             
-            // תמיכה בהדגשת חלקי מילים/מספרים באופן מדויק
-            const regex = new RegExp(`(${terms.join('|')})`, 'gi');
+            const safeTerms = terms.map(escapeRegExp);
+            const regex = new RegExp(`(${safeTerms.join('|')})`, 'gi');
             const parts = text.split(regex);
             
             return (
@@ -102,9 +103,10 @@
                         count += lines.length;
 
                         if (initResults.length < 50) {
-                            for(let i=0; i<lines.length; i++) {
+                            // תוקן הרווח בלולאה למניעת קריסת Babel
+                            for (let i = 0; i < lines.length; i++) {
                                 let line = lines[i].trim();
-                                if(!line) continue;
+                                if (!line) continue;
                                 if (line.startsWith("'") && line.endsWith("'")) line = line.slice(1, -1);
                                 
                                 const parts = line.split("','");
@@ -170,7 +172,7 @@
                     let idCounter = 0;
 
                     try {
-                        while(offset < activeFile.size && found.length < 150) {
+                        while (offset < activeFile.size && found.length < 150) {
                             if(isCancelled) return;
                             const chunk = activeFile.slice(offset, offset + CHUNK);
                             const text = await new Promise(res => {
@@ -181,13 +183,13 @@
                             const lines = (leftover + text).split(/\r?\n/);
                             leftover = lines.pop();
 
-                            for(let i=0; i<lines.length; i++) {
+                            // תוקן הרווח בלולאה למניעת קריסת Babel
+                            for (let i = 0; i < lines.length; i++) {
                                 idCounter++;
                                 let line = lines[i].trim();
                                 if(!line) continue;
                                 const lineLower = line.toLowerCase();
 
-                                // תמיכה מלאה בחיפוש חלקי (Partial match) - מוודא שהחלק קיים בתוך השורה המלאה
                                 if (terms.every(t => lineLower.includes(t))) {
                                     if (line.startsWith("'") && line.endsWith("'")) line = line.slice(1, -1);
                                     const parts = line.split("','");
@@ -207,7 +209,7 @@
                                             address: addressStr,
                                             city: cityStr
                                         });
-                                        if(found.length >= 150) break;
+                                        if (found.length >= 150) break;
                                     }
                                 }
                             }
@@ -236,7 +238,6 @@
             const getMapUrl = () => {
                 if (!selectedRecord) return "";
                 const fullAddress = `${selectedRecord.address}, ${selectedRecord.city}`;
-                // שימוש ב-layer=c כדי לאלץ את מצב ה-Street View. אם גוגל לא מוצאת קואורדינטות מדויקות, היא תיפול חזרה לתצלום לוויין בזום מקסימלי (t=k).
                 return `https://maps.google.com/maps?q=${encodeURIComponent(fullAddress)}&layer=c&t=k&z=20&ie=UTF8&iwloc=&output=embed`;
             };
 
@@ -254,7 +255,7 @@
                         <header className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
                                 <div className="bg-blue-100 p-3 rounded-xl border border-blue-200 text-blue-600">
-                                    <Icons.Database />
+                                    <DatabaseIcon />
                                 </div>
                                 <div>
                                     <h1 className="text-2xl font-bold text-slate-800">מערכת איתור נתונים</h1>
@@ -283,7 +284,7 @@
                         {!activeFile && !isScanning ? (
                             <div className="bg-white border border-slate-200 border-dashed rounded-3xl p-16 text-center animate-in fade-in duration-700 shadow-sm">
                                 <div className="text-slate-400 flex justify-center mb-6">
-                                    <Icons.Upload />
+                                    <UploadIcon />
                                 </div>
                                 <h2 className="text-2xl font-bold text-slate-700 mb-2">אין נתונים נגישים</h2>
                                 <p className="text-slate-500 mb-6">גרור קובץ למערכת או לחץ על הכפתור למעלה כדי להתחיל בסריקה ללא מגבלות גודל</p>
@@ -308,7 +309,7 @@
                                                 <div className="absolute right-4 text-slate-400">
                                                     {isSearching ? (
                                                         <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                                                    ) : <Icons.Search />}
+                                                    ) : <SearchIcon />}
                                                 </div>
                                                 <input
                                                     type="text"
@@ -319,7 +320,7 @@
                                                 />
                                                 {searchQuery && (
                                                     <button onClick={() => setSearchQuery('')} className="absolute left-4 text-slate-400 hover:text-slate-600 bg-slate-100 p-1.5 rounded-full transition-colors">
-                                                        <Icons.X />
+                                                        <XIcon />
                                                     </button>
                                                 )}
                                             </div>
@@ -331,7 +332,7 @@
                                 <div className="overflow-x-auto flex-1">
                                     {!isScanning && results.length === 0 ? (
                                         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                                            <div className="bg-slate-100 p-4 rounded-full mb-4"><Icons.Search /></div>
+                                            <div className="bg-slate-100 p-4 rounded-full mb-4"><SearchIcon /></div>
                                             <p className="text-lg font-medium text-slate-600">לא נמצאו תוצאות לחיפוש זה</p>
                                         </div>
                                     ) : (
@@ -396,26 +397,26 @@
                                 <div className="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50/50">
                                     <h3 className="text-xl font-bold text-slate-800 flex items-center gap-3">
                                         <div className="p-2 bg-blue-100 rounded-lg text-blue-600 border border-blue-200">
-                                            <Icons.User />
+                                            <UserIcon />
                                         </div>
                                         כרטיס מידע אישי
                                     </h3>
                                     <button onClick={() => { setSelectedRecord(null); setShowMap(false); }} className="text-slate-400 hover:text-slate-700 bg-white hover:bg-slate-100 border border-transparent hover:border-slate-200 p-2 rounded-lg transition-all">
-                                        <Icons.X />
+                                        <XIcon />
                                     </button>
                                 </div>
                                 
                                 <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
                                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6 flex items-center gap-4 shadow-sm">
                                         <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center border-2 border-slate-200 shadow-sm">
-                                            <span className="text-slate-400"><Icons.User /></span>
+                                            <span className="text-slate-400"><UserIcon /></span>
                                         </div>
                                         <div>
                                             <h4 className="text-2xl font-bold text-slate-800">
                                                 {selectedRecord.firstName} {selectedRecord.lastName}
                                             </h4>
                                             <div className="flex items-center gap-2 text-blue-600 font-mono mt-1 text-sm font-medium">
-                                                <Icons.Shield />
+                                                <ShieldIcon />
                                                 {selectedRecord.idNumber}
                                             </div>
                                         </div>
@@ -445,7 +446,7 @@
                                                     <p className="text-lg text-slate-800 font-bold">{selectedRecord.address || '-'}</p>
                                                 </div>
                                                 <div className="text-slate-300 group-hover:text-blue-500 transition-colors mt-1">
-                                                    <Icons.MapPin />
+                                                    <MapPinIcon />
                                                 </div>
                                             </div>
                                         </div>
