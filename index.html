@@ -1,118 +1,105 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
-import { Search, UploadCloud, FileText, Database, Clock, X, Download, Copy, SearchX, Menu, Bell } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Israel Data Base System</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load React & ReactDOM from CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Load Babel to compile JSX in-browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Load Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { background-color: #f8fafc; font-family: sans-serif; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-/**
- * רכיב חיפוש מתקדם עבור בסיסי נתונים בקבצי טקסט
- * הקוד מאורגן מחדש לקריאות ותחזוקה גבוהה
- */
+    <script type="text/babel">
+        const { useState, useRef, useCallback } = React;
+        const { Search, UploadCloud, Database, User, Shield, X, Download, Copy, SearchX, Bell } = lucide;
 
-export default function App() {
-  // מצב המערכת
-  const [activeFile, setActiveFile] = useState(null);
-  const [searchResults, setSearchResults] = useState([]);
-  const [searchTime, setSearchTime] = useState(0);
-  const [isSearching, setIsSearching] = useState(false);
-  const [isAdvancedSearch, setIsAdvancedSearch] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  
-  const [advancedSearchQuery, setAdvancedSearchQuery] = useState({
-    firstName: '', lastName: '', idNumber: '', city: '', address: ''
-  });
+        function App() {
+            const [activeFile, setActiveFile] = useState(null);
+            const [data, setData] = useState([]);
+            const [searchQuery, setSearchQuery] = useState('');
+            const fileInputRef = useRef(null);
 
-  const fileInputRef = useRef(null);
-  const currentSearchId = useRef(0);
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    setActiveFile(file);
+                    // כאן ניתן להוסיף לוגיקת קריאה לקובץ
+                    setData([{ _id: 1, firstName: 'דוגמה', lastName: 'ישראל', idNumber: '123456789', city: 'חיפה', address: 'הרצל 1' }]);
+                }
+            };
 
-  // פונקציית העלאת קובץ
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setActiveFile(file);
-    }
-  };
+            return (
+                <div className="min-h-screen p-4 md:p-8">
+                    <header className="max-w-5xl mx-auto flex items-center justify-between mb-8 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                        <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                            <Database className="text-blue-600" /> Israel Data Base
+                        </h1>
+                        <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors"
+                        >
+                            טען קובץ נתונים
+                        </button>
+                        <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
+                    </header>
 
-  // מנוע חיפוש אופטימלי לטקסט
-  const performSearch = useCallback(async (simple, adv, isAdv) => {
-    if (!activeFile) return;
-    const searchId = ++currentSearchId.current;
-    setIsSearching(true);
-    const start = performance.now();
-
-    // לוגיקת חיפוש...
-    // (הוסף כאן את הלוגיקה המלאה מהקוד הקודם שלך)
-    
-    setIsSearching(false);
-    setSearchTime((performance.now() - start).toFixed(2));
-  }, [activeFile]);
-
-  return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 p-4 md:p-8">
-      {/* תפריט עליון */}
-      <header className="max-w-6xl mx-auto flex items-center justify-between mb-8">
-        <h1 className="text-2xl font-bold text-slate-800">PF-DB System</h1>
-        <div className="flex gap-2">
-            <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="bg-white border border-slate-200 px-4 py-2 rounded-lg text-sm shadow-sm hover:bg-slate-50 transition-all flex items-center gap-2"
-            >
-                <UploadCloud size={16} /> החלף קובץ
-            </button>
-            <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
-        </div>
-      </header>
-
-      {/* אזור העבודה המרכזי */}
-      <main className="max-w-6xl mx-auto">
-        {!activeFile ? (
-          <div className="bg-white border border-slate-200 p-12 rounded-2xl text-center shadow-sm">
-            <UploadCloud size={64} className="mx-auto text-slate-300 mb-4" />
-            <h2 className="text-xl font-semibold mb-2">לא נבחר קובץ</h2>
-            <p className="text-slate-500 mb-6">גרור קובץ טקסט למערכת כדי להתחיל בחיפוש</p>
-            <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="bg-blue-600 text-white px-8 py-3 rounded-xl font-medium hover:bg-blue-700 transition-colors"
-            >
-                בחר קובץ מהמחשב
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-6 animate-in fade-in duration-500">
-            {/* ממשק חיפוש */}
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="flex justify-between mb-4">
-                    <h3 className="font-semibold text-slate-700">לוח חיפוש</h3>
-                    <button 
-                        onClick={() => setIsAdvancedSearch(!isAdvancedSearch)}
-                        className="text-blue-600 text-sm font-medium hover:underline"
-                    >
-                        {isAdvancedSearch ? 'חזור לחיפוש רגיל' : 'עבור לחיפוש מתקדם'}
-                    </button>
+                    <main className="max-w-5xl mx-auto">
+                        {!activeFile ? (
+                            <div className="text-center py-20 bg-white rounded-2xl border-2 border-dashed border-slate-300">
+                                <UploadCloud size={48} className="mx-auto text-slate-400 mb-4" />
+                                <h2 className="text-xl font-semibold text-slate-700">לא נטען קובץ</h2>
+                                <p className="text-slate-500">לחץ על כפתור "טען קובץ נתונים" כדי להתחיל</p>
+                            </div>
+                        ) : (
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                                <div className="p-4 border-b border-slate-100">
+                                    <input 
+                                        type="text" 
+                                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+                                        placeholder="חיפוש מהיר..."
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                    />
+                                </div>
+                                <table className="w-full text-right">
+                                    <thead className="bg-slate-50 text-slate-600 text-sm">
+                                        <tr>
+                                            <th className="p-4">ת.ז</th>
+                                            <th className="p-4">שם פרטי</th>
+                                            <th className="p-4">שם משפחה</th>
+                                            <th className="p-4">עיר</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {data.map(row => (
+                                            <tr key={row._id} className="border-t border-slate-100 hover:bg-slate-50">
+                                                <td className="p-4 font-mono">{row.idNumber}</td>
+                                                <td className="p-4">{row.firstName}</td>
+                                                <td className="p-4">{row.lastName}</td>
+                                                <td className="p-4">{row.city}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </main>
                 </div>
-                
-                {/* כאן יבואו שדות החיפוש בהתאם למצב */}
-                <input 
-                    className="w-full p-4 bg-slate-50 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                    placeholder="הקלד נתונים לחיפוש..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                />
-            </div>
+            );
+        }
 
-            {/* טבלת תוצאות */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                {searchResults.length === 0 ? (
-                    <div className="p-20 text-center text-slate-400">
-                        <SearchX size={48} className="mx-auto mb-4" />
-                        <p>לא נמצאו רשומות התואמות לחיפוש</p>
-                    </div>
-                ) : (
-                    <table className="w-full text-right">
-                        {/* טבלה */}
-                    </table>
-                )}
-            </div>
-          </div>
-        )}
-      </main>
-    </div>
-  );
-}
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
