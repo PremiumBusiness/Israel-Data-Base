@@ -113,8 +113,12 @@
       font-size: 14px;
     }
 
-    input[type="file"] {
-      display: none;
+    #fileInput {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      overflow: hidden;
     }
 
     .grid {
@@ -275,16 +279,15 @@
       </header>
 
       <section class="card">
-        <div id="uploadArea" class="upload-area" tabindex="0" role="button" aria-label="בחירת קובץ">
+        <label id="uploadArea" class="upload-area" for="fileInput" tabindex="0" role="button" aria-label="בחירת קובץ">
           <svg xmlns="http://www.w3.org/2000/svg" width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path>
             <path d="M12 12v9"></path>
             <path d="m16 16-4-4-4 4"></path>
           </svg>
           <div class="upload-title">בחר קובץ נתונים</div>
-          <div class="upload-note">העמוד קורא CSV או JSON. קובצי Access/MDB כמו ‎.a3 צריכים המרה בצד שרת או המרה ל־CSV.</div>
-        </div>
-        <input id="fileInput" type="file" accept=".csv,.json,.txt,.mdb,.a,.a2,.a3" />
+        </label>
+        <input id="fileInput" type="file" accept=".txt,.csv,.json,text/plain,text/csv,application/json" />
       </section>
 
       <section class="card">
@@ -349,30 +352,39 @@
     const state = {
       rows: [],
       filteredRows: [],
+      columns: [],
       sortKey: null,
       sortDirection: "asc",
       lastEncoding: null
     };
 
-    const fields = ["idNumber", "firstName", "lastName", "city", "address"];
-    const labels = {
-      idNumber: "תעודת זהות",
-      firstName: "שם פרטי",
-      lastName: "שם משפחה",
-      city: "עיר",
-      address: "כתובת"
-    };
+    const baseColumns = [
+      { key: "idNumber", label: "תעודת זהות" },
+      { key: "firstName", label: "שם פרטי" },
+      { key: "lastName", label: "שם משפחה" },
+      { key: "city", label: "עיר" },
+      { key: "address", label: "כתובת" }
+    ];
+
+    const fields = baseColumns.map(function(column) { return column.key; });
+    const labels = {};
+    baseColumns.forEach(function(column) { labels[column.key] = column.label; });
+    const MAX_ROWS_TO_RENDER = 2000;
 
     const uploadArea = document.getElementById("uploadArea");
     const fileInput = document.getElementById("fileInput");
     const fileStatus = document.getElementById("fileStatus");
     const resultStatus = document.getElementById("resultStatus");
     const tbody = document.getElementById("tbody");
+    const theadRow = document.querySelector("thead tr");
     const alertBox = document.getElementById("alert");
 
     function showError(message) {
       alertBox.textContent = message;
       alertBox.style.display = "block";
+      alertBox.style.background = "#fef2f2";
+      alertBox.style.borderColor = "#fecaca";
+      alertBox.style.color = "#991b1b";
     }
 
     function showInfo(message) {
@@ -392,88 +404,79 @@
     }
 
     function normalizeText(value) {
-      return String(value ?? "").trim().toLowerCase();
+      return String(value == null ? "" : value).trim().toLowerCase();
     }
 
     function normalizeHeader(value) {
-      return String(value ?? "")
-        .replace(/^﻿/, "")
-        .replace(/[‎‏]/g, "")
-        .trim()
-        .toLowerCase();
+      let text = String(value == null ? "" : value);
+      let clean = "";
+      for (let i = 0; i < text.length; i++) {
+        const code = text.charCodeAt(i);
+        if (code !== 65279 && code !== 8206 && code !== 8207) clean += text[i];
+      }
+      return clean.trim().toLowerCase();
     }
 
-    function normalizeRow(row) {
-      const normalized = {};
-      Object.keys(row || {}).forEach(key => {
-        normalized[normalizeHeader(key)] = row[key];
-      });
-
-      return {
-        idNumber:
-          row.idNumber ?? row.id ?? row.ID ??
-          normalized["תעודת זהות"] ?? normalized["תז"] ?? normalized["ת.ז"] ??
-          normalized["מספר זהות"] ?? normalized["מספר תעודת זהות"] ??
-          normalized["zehut"] ?? normalized["idnumber"] ?? normalized["id number"] ?? "",
-        firstName:
-          row.firstName ?? row.first_name ?? row.FirstName ??
-          normalized["שם פרטי"] ?? normalized["שם"] ?? normalized["firstname"] ?? normalized["first name"] ?? "",
-        lastName:
-          row.lastName ?? row.last_name ?? row.LastName ??
-          normalized["שם משפחה"] ?? normalized["משפחה"] ?? normalized["lastname"] ?? normalized["last name"] ?? "",
-        city:
-          row.city ?? row.City ??
-          normalized["עיר"] ?? normalized["ישוב"] ?? normalized["יישוב"] ?? normalized["city"] ?? "",
-        address:
-          row.address ?? row.Address ??
-          normalized["כתובת"] ?? normalized["רחוב"] ?? normalized["address"] ?? ""
-      };
+    function columnLabel(key) {
+      if (labels[key]) return labels[key];
+      if (key === "rawText") return "שורה מקורית";
+      if (key.indexOf("_col") === 0) return "עמודה " + key.replace("_col", "");
+      return key;
     }
 
-    function detectDelimiter(line) {
-      const delimiters = ["	", ",", ";", "|", "#"];
-      let bestDelimiter = ",";
-      let bestCount = 0;
+    function isDigit(char) {
+      const code = char.charCodeAt(0);
+      return code >= 48 && code <= 57;
+    }
 
-      delimiters.forEach(delimiter => {
-        const count = splitDelimitedLine(line, delimiter).length - 1;
-        if (count > bestCount) {
-          bestCount = count;
-          bestDelimiter = delimiter;
+    function extractId(text) {
+      const s = String(text == null ? "" : text);
+      let current = "";
+      for (let i = 0; i <= s.length; i++) {
+        const char = i < s.length ? s[i] : " ";
+        if (i < s.length && isDigit(char)) {
+          current += char;
+        } else {
+          if (current.length >= 5 && current.length <= 10) return current;
+          current = "";
         }
-      });
-
-      return bestDelimiter;
+      }
+      return "";
     }
 
-    function parseDelimitedText(text) {
-      const cleanText = String(text || "").replace(/^﻿/, "");
-      const lines = cleanText.split(/
-?
-/).filter(line => line.trim() !== "");
-      if (lines.length < 2) return [];
+    function splitLines(text) {
+      const result = [];
+      let current = "";
+      const s = String(text == null ? "" : text);
 
-      const delimiter = detectDelimiter(lines[0]);
-      const headers = splitDelimitedLine(lines[0], delimiter).map(header => header.trim());
+      for (let i = 0; i < s.length; i++) {
+        const code = s.charCodeAt(i);
+        if (code === 13 || code === 10) {
+          const trimmed = current.trim();
+          if (trimmed) result.push(trimmed);
+          current = "";
+          if (code === 13 && i + 1 < s.length && s.charCodeAt(i + 1) === 10) i++;
+        } else if (code !== 0 && code !== 65279) {
+          current += s[i];
+        }
+      }
 
-      return lines.slice(1).map(line => {
-        const values = splitDelimitedLine(line, delimiter);
-        const row = {};
-        headers.forEach((header, index) => {
-          row[header] = values[index] ?? "";
-        });
-        return normalizeRow(row);
-      });
+      const trimmed = current.trim();
+      if (trimmed) result.push(trimmed);
+      return result;
     }
 
     function splitDelimitedLine(line, delimiter) {
+      if (delimiter === "MULTISPACE") return splitByMultipleSpaces(line);
+
       const result = [];
       let current = "";
       let inQuotes = false;
+      const s = String(line == null ? "" : line);
 
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        const next = line[i + 1];
+      for (let i = 0; i < s.length; i++) {
+        const char = s[i];
+        const next = i + 1 < s.length ? s[i + 1] : "";
 
         if (char === '"' && inQuotes && next === '"') {
           current += '"';
@@ -492,27 +495,273 @@
       return result;
     }
 
+    function splitByMultipleSpaces(line) {
+      const result = [];
+      let current = "";
+      let spaces = "";
+      const s = String(line == null ? "" : line);
+
+      for (let i = 0; i < s.length; i++) {
+        const char = s[i];
+        const code = char.charCodeAt(0);
+        const isSpace = code === 32 || code === 9;
+
+        if (isSpace) {
+          spaces += char;
+        } else {
+          if (spaces.length >= 2) {
+            if (current.trim()) result.push(current.trim());
+            current = "";
+          } else {
+            current += spaces;
+          }
+          spaces = "";
+          current += char;
+        }
+      }
+
+      if (current.trim()) result.push(current.trim());
+      return result;
+    }
+
+    function detectDelimiter(lines) {
+      const sample = lines.slice(0, 30);
+      const delimiters = [String.fromCharCode(9), ";", ",", "|", "#"];
+      let bestDelimiter = null;
+      let bestScore = 0;
+
+      delimiters.forEach(function(delimiter) {
+        let rowsWithDelimiter = 0;
+        let totalParts = 0;
+        sample.forEach(function(line) {
+          const parts = splitDelimitedLine(line, delimiter).length;
+          if (parts > 1) {
+            rowsWithDelimiter++;
+            totalParts += parts;
+          }
+        });
+        const score = rowsWithDelimiter * 10 + totalParts;
+        if (score > bestScore) {
+          bestScore = score;
+          bestDelimiter = delimiter;
+        }
+      });
+
+      if (bestDelimiter) return bestDelimiter;
+
+      let multiSpaceRows = 0;
+      sample.forEach(function(line) {
+        if (splitByMultipleSpaces(line).length > 1) multiSpaceRows++;
+      });
+      if (multiSpaceRows >= Math.max(1, Math.floor(sample.length * 0.4))) return "MULTISPACE";
+
+      return null;
+    }
+
+    function containsAny(text, words) {
+      const value = normalizeHeader(text);
+      return words.some(function(word) { return value.indexOf(word) >= 0; });
+    }
+
+    function looksLikeHeader(parts, nextParts) {
+      const firstLine = parts.join(" ");
+      const nextLine = (nextParts || []).join(" ");
+      const hasKnownHeader = containsAny(firstLine, [
+        "תעודת זהות", "מספר זהות", "תז", "ת.ז", "שם פרטי", "שם משפחה", "כתובת", "עיר", "יישוב", "ישוב", "id", "first", "last", "address", "city"
+      ]);
+      const firstHasId = !!extractId(firstLine);
+      const nextHasId = !!extractId(nextLine);
+      return hasKnownHeader || (!firstHasId && nextHasId && parts.length > 1);
+    }
+
+    function uniqueKey(key, used) {
+      let candidate = key || "column";
+      let index = 2;
+      while (used[candidate]) {
+        candidate = key + "_" + index;
+        index++;
+      }
+      used[candidate] = true;
+      return candidate;
+    }
+
+    function mapHeaderToKey(header, index, used) {
+      const h = normalizeHeader(header);
+      let key = String(header || "").trim() || "_col" + (index + 1);
+
+      if (containsAny(h, ["תעודת זהות", "מספר זהות", "מספר תעודת זהות", "ת.ז", "תז", "idnumber", "id number", "zehut"])) key = "idNumber";
+      else if (containsAny(h, ["שם פרטי", "firstname", "first name"])) key = "firstName";
+      else if (containsAny(h, ["שם משפחה", "משפחה", "lastname", "last name"])) key = "lastName";
+      else if (containsAny(h, ["עיר", "יישוב", "ישוב", "city", "town"])) key = "city";
+      else if (containsAny(h, ["כתובת", "רחוב", "address", "street"])) key = "address";
+
+      return uniqueKey(key, used);
+    }
+
+    function normalizeRow(row) {
+      const normalized = {};
+      Object.keys(row || {}).forEach(function(key) {
+        normalized[normalizeHeader(key)] = row[key];
+      });
+
+      const result = Object.assign({}, row);
+      result.idNumber = result.idNumber || result.id || result.ID || normalized["תעודת זהות"] || normalized["תז"] || normalized["ת.ז"] || normalized["מספר זהות"] || normalized["מספר תעודת זהות"] || normalized["idnumber"] || normalized["id number"] || "";
+      result.firstName = result.firstName || result.first_name || result.FirstName || normalized["שם פרטי"] || normalized["firstname"] || normalized["first name"] || "";
+      result.lastName = result.lastName || result.last_name || result.LastName || normalized["שם משפחה"] || normalized["משפחה"] || normalized["lastname"] || normalized["last name"] || "";
+      result.city = result.city || result.City || normalized["עיר"] || normalized["ישוב"] || normalized["יישוב"] || normalized["city"] || "";
+      result.address = result.address || result.Address || normalized["כתובת"] || normalized["רחוב"] || normalized["address"] || "";
+      return result;
+    }
+
+    function hasUsefulValue(row) {
+      return Object.values(row || {}).some(function(value) { return String(value == null ? "" : value).trim() !== ""; });
+    }
+
+    function enrichRowFromValues(row, values) {
+      if (!row.idNumber) {
+        for (let i = 0; i < values.length; i++) {
+          const id = extractId(values[i]);
+          if (id) {
+            row.idNumber = id;
+            break;
+          }
+        }
+      }
+      return row;
+    }
+
+    function parseFreeTextLine(line) {
+      return normalizeRow({ idNumber: extractId(line), rawText: line });
+    }
+
+    function parseDelimitedText(text) {
+      const lines = splitLines(text);
+      if (!lines.length) return { rows: [], columns: baseColumns };
+
+      const delimiter = detectDelimiter(lines);
+      const rows = [];
+      let columns = [];
+
+      if (delimiter) {
+        const firstParts = splitDelimitedLine(lines[0], delimiter);
+        const secondParts = lines[1] ? splitDelimitedLine(lines[1], delimiter) : [];
+        const hasHeader = looksLikeHeader(firstParts, secondParts);
+        const used = {};
+
+        if (hasHeader && lines.length >= 2) {
+          const keys = firstParts.map(function(header, index) { return mapHeaderToKey(header, index, used); });
+          columns = keys.map(function(key) { return { key: key, label: columnLabel(key) }; });
+
+          lines.slice(1).forEach(function(line) {
+            const values = splitDelimitedLine(line, delimiter);
+            const row = {};
+            keys.forEach(function(key, index) { row[key] = values[index] || ""; });
+            rows.push(enrichRowFromValues(normalizeRow(row), values));
+          });
+        } else {
+          let maxColumnCount = 1;
+          lines.slice(0, 100).forEach(function(line) {
+            maxColumnCount = Math.max(maxColumnCount, splitDelimitedLine(line, delimiter).length);
+          });
+          const keys = [];
+          for (let i = 0; i < maxColumnCount; i++) keys.push("_col" + (i + 1));
+          columns = keys.map(function(key) { return { key: key, label: columnLabel(key) }; });
+
+          lines.forEach(function(line) {
+            const values = splitDelimitedLine(line, delimiter);
+            const row = { rawText: line };
+            keys.forEach(function(key, index) { row[key] = values[index] || ""; });
+            rows.push(enrichRowFromValues(normalizeRow(row), values));
+          });
+        }
+      } else {
+        columns = [
+          { key: "idNumber", label: "תעודת זהות" },
+          { key: "rawText", label: "שורה מקורית" }
+        ];
+        lines.forEach(function(line) { rows.push(parseFreeTextLine(line)); });
+      }
+
+      const cleanRows = rows.filter(hasUsefulValue);
+      return { rows: cleanRows, columns: mergeColumns(columns, cleanRows) };
+    }
+
     function parseJson(text) {
       const data = JSON.parse(text);
-      const rows = Array.isArray(data) ? data : data.rows || data.data || [];
-      if (!Array.isArray(rows)) return [];
-      return rows.map(normalizeRow);
+      const rawRows = Array.isArray(data) ? data : data.rows || data.data || [];
+      if (!Array.isArray(rawRows)) return { rows: [], columns: baseColumns };
+      const rows = rawRows.map(normalizeRow).filter(hasUsefulValue);
+      return { rows: rows, columns: mergeColumns(baseColumns, rows) };
+    }
+
+    function mergeColumns(preferredColumns, rows) {
+      const result = [];
+      const used = {};
+
+      function addColumn(column) {
+        const key = typeof column === "string" ? column : column.key;
+        if (!key || used[key]) return;
+        const hasValue = rows.length === 0 || rows.some(function(row) { return String(row[key] == null ? "" : row[key]).trim() !== ""; });
+        if (!hasValue && fields.indexOf(key) < 0) return;
+        used[key] = true;
+        result.push({ key: key, label: typeof column === "string" ? columnLabel(column) : (column.label || columnLabel(key)) });
+      }
+
+      preferredColumns.forEach(addColumn);
+      baseColumns.forEach(addColumn);
+      rows.slice(0, 100).forEach(function(row) {
+        Object.keys(row).forEach(function(key) {
+          if (key !== "rawText") addColumn(key);
+        });
+      });
+      if (rows.some(function(row) { return row.rawText; })) addColumn({ key: "rawText", label: "שורה מקורית" });
+      return result.length ? result : baseColumns;
     }
 
     function countHebrewCharacters(text) {
-      const match = String(text || "").match(/[֐-׿]/g);
-      return match ? match.length : 0;
+      let count = 0;
+      const s = String(text == null ? "" : text);
+      for (let i = 0; i < s.length; i++) {
+        const code = s.charCodeAt(i);
+        if (code >= 1424 && code <= 1535) count++;
+      }
+      return count;
     }
 
     function countBadCharacters(text) {
-      const match = String(text || "").match(/ /g);
-      return match ? match.length : 0;
+      let count = 0;
+      const s = String(text == null ? "" : text);
+      for (let i = 0; i < s.length; i++) {
+        const code = s.charCodeAt(i);
+        if (code === 65533 || s[i] === "×") count++;
+      }
+      return count;
+    }
+
+    function decodeWindows1255Manually(buffer) {
+      const bytes = new Uint8Array(buffer);
+      const hebrew = {
+        224: "א", 225: "ב", 226: "ג", 227: "ד", 228: "ה", 229: "ו", 230: "ז", 231: "ח", 232: "ט", 233: "י",
+        234: "ך", 235: "כ", 236: "ל", 237: "ם", 238: "מ", 239: "ן", 240: "נ", 241: "ס", 242: "ע", 243: "ף",
+        244: "פ", 245: "ץ", 246: "צ", 247: "ק", 248: "ר", 249: "ש", 250: "ת", 164: "₪"
+      };
+      let output = "";
+      for (let i = 0; i < bytes.length; i++) {
+        const byte = bytes[i];
+        if (byte < 128) output += String.fromCharCode(byte);
+        else output += hebrew[byte] || String.fromCharCode(byte);
+      }
+      return output;
+    }
+
+    function scoreText(text) {
+      return countHebrewCharacters(text) * 5 + splitLines(text).length - countBadCharacters(text) * 40;
     }
 
     function decodeTextFromBuffer(buffer) {
       const bytes = new Uint8Array(buffer);
 
-      if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+      if (bytes.length >= 3 && bytes[0] === 239 && bytes[1] === 187 && bytes[2] === 191) {
         return { text: new TextDecoder("utf-8").decode(buffer), encoding: "UTF-8 BOM" };
       }
 
@@ -523,97 +772,103 @@
       ];
 
       let best = null;
-
-      candidates.forEach(candidate => {
+      candidates.forEach(function(candidate) {
         try {
           const text = new TextDecoder(candidate.label).decode(buffer);
-          const score = countHebrewCharacters(text) * 3 - countBadCharacters(text) * 20;
-          const option = { text, encoding: candidate.name, score };
+          const option = { text: text, encoding: candidate.name, score: scoreText(text) };
           if (!best || option.score > best.score) best = option;
-        } catch (error) {
-          // Some older browsers may not support every legacy encoding.
-        }
+        } catch (error) {}
       });
 
-      if (best) return { text: best.text, encoding: best.encoding };
+      const manual = decodeWindows1255Manually(buffer);
+      const manualOption = { text: manual, encoding: "Windows-1255 עברית - פענוח ידני", score: scoreText(manual) };
+      if (!best || manualOption.score > best.score) best = manualOption;
 
-      return { text: new TextDecoder().decode(buffer), encoding: "ברירת מחדל של הדפדפן" };
+      return { text: best.text, encoding: best.encoding };
     }
 
-    function setRows(rows, fileName, encoding) {
+    function setRows(rows, fileName, encoding, columns) {
       state.rows = rows;
       state.filteredRows = rows;
+      state.columns = columns && columns.length ? columns : mergeColumns(baseColumns, rows);
       state.lastEncoding = encoding || null;
-
-      if (fileName) {
-        fileStatus.textContent = `נטען קובץ: ${fileName}${encoding ? ` | קידוד: ${encoding}` : ""}`;
-      } else {
-        fileStatus.textContent = "נטענו נתוני דוגמה.";
-      }
-
+      fileStatus.textContent = fileName ? "נטען קובץ: " + fileName + (encoding ? " | קידוד: " + encoding : "") : "נטענו נתוני דוגמה.";
       renderTable();
     }
 
-    function renderTable() {
-      let rows = [...state.filteredRows];
+    function renderHeader() {
+      theadRow.innerHTML = state.columns.map(function(column) {
+        return '<th data-key="' + escapeHtml(column.key) + '">' + escapeHtml(column.label || columnLabel(column.key)) + ' <span class="sort"></span></th>';
+      }).join("");
 
+      document.querySelectorAll("th[data-key]").forEach(function(th) {
+        th.addEventListener("click", function() {
+          const key = th.dataset.key;
+          if (state.sortKey === key) state.sortDirection = state.sortDirection === "asc" ? "desc" : "asc";
+          else {
+            state.sortKey = key;
+            state.sortDirection = "asc";
+          }
+          renderTable();
+        });
+      });
+    }
+
+    function renderTable() {
+      if (!state.columns.length) state.columns = baseColumns;
+      renderHeader();
+
+      let rows = state.filteredRows.slice();
       if (state.sortKey) {
-        rows.sort((a, b) => {
+        rows.sort(function(a, b) {
           const aValue = normalizeText(a[state.sortKey]);
           const bValue = normalizeText(b[state.sortKey]);
-          return state.sortDirection === "asc"
-            ? aValue.localeCompare(bValue, "he")
-            : bValue.localeCompare(aValue, "he");
+          return state.sortDirection === "asc" ? aValue.localeCompare(bValue, "he") : bValue.localeCompare(aValue, "he");
         });
       }
 
-      resultStatus.textContent = `${rows.length} תוצאות`;
+      const shownRows = rows.slice(0, MAX_ROWS_TO_RENDER);
+      resultStatus.textContent = rows.length > MAX_ROWS_TO_RENDER ? "מציג " + shownRows.length + " מתוך " + rows.length + " תוצאות" : rows.length + " תוצאות";
 
-      document.querySelectorAll("th[data-key]").forEach(th => {
+      document.querySelectorAll("th[data-key]").forEach(function(th) {
         const span = th.querySelector(".sort");
-        if (th.dataset.key === state.sortKey) {
-          span.textContent = state.sortDirection === "asc" ? "▲" : "▼";
-        } else {
-          span.textContent = "";
-        }
+        span.textContent = th.dataset.key === state.sortKey ? (state.sortDirection === "asc" ? "▲" : "▼") : "";
       });
 
-      if (rows.length === 0) {
-        tbody.innerHTML = '<tr><td class="empty" colspan="5">אין נתונים להצגה.</td></tr>';
+      if (!shownRows.length) {
+        tbody.innerHTML = '<tr><td class="empty" colspan="' + state.columns.length + '">אין נתונים להצגה.</td></tr>';
         return;
       }
 
-      tbody.innerHTML = rows.map(row => `
-        <tr>
-          <td>${escapeHtml(row.idNumber)}</td>
-          <td>${escapeHtml(row.firstName)}</td>
-          <td>${escapeHtml(row.lastName)}</td>
-          <td>${escapeHtml(row.city)}</td>
-          <td>${escapeHtml(row.address)}</td>
-        </tr>
-      `).join("");
+      tbody.innerHTML = shownRows.map(function(row) {
+        return "<tr>" + state.columns.map(function(column) {
+          return "<td>" + escapeHtml(row[column.key] || "") + "</td>";
+        }).join("") + "</tr>";
+      }).join("");
     }
 
     function escapeHtml(value) {
-      return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
+      return String(value == null ? "" : value)
+        .split("&").join("&amp;")
+        .split("<").join("&lt;")
+        .split(">").join("&gt;")
+        .split('"').join("&quot;")
+        .split("'").join("&#039;");
+    }
+
+    function rowContains(row, value) {
+      return Object.values(row || {}).some(function(cell) { return normalizeText(cell).indexOf(value) >= 0; });
     }
 
     function searchRows() {
       clearError();
       const params = {};
-      fields.forEach(field => {
-        params[field] = normalizeText(document.getElementById(field).value);
-      });
+      fields.forEach(function(field) { params[field] = normalizeText(document.getElementById(field).value); });
 
-      state.filteredRows = state.rows.filter(row => {
-        return fields.every(field => {
+      state.filteredRows = state.rows.filter(function(row) {
+        return fields.every(function(field) {
           if (!params[field]) return true;
-          return normalizeText(row[field]).includes(params[field]);
+          return normalizeText(row[field]).indexOf(params[field]) >= 0 || rowContains(row, params[field]);
         });
       });
 
@@ -622,7 +877,7 @@
 
     function clearSearch() {
       clearError();
-      fields.forEach(field => document.getElementById(field).value = "");
+      fields.forEach(function(field) { document.getElementById(field).value = ""; });
       state.filteredRows = state.rows;
       renderTable();
     }
@@ -633,7 +888,7 @@
         { idNumber: "123456789", firstName: "דוד", lastName: "כהן", city: "ירושלים", address: "הרצל 10" },
         { idNumber: "987654321", firstName: "משה", lastName: "לוי", city: "תל אביב", address: "דיזנגוף 25" },
         { idNumber: "111222333", firstName: "שרה", lastName: "מזרחי", city: "חיפה", address: "הנמל 7" }
-      ]);
+      ], null, null, baseColumns);
     }
 
     async function handleFile(file) {
@@ -641,40 +896,36 @@
       const name = file.name || "";
       const ext = name.toLowerCase().split(".").pop();
 
-      if (["mdb", "a", "a2", "a3"].includes(ext)) {
-        fileStatus.textContent = `נבחר קובץ: ${name}`;
-        showError(
-          "העמוד נטען תקין, אבל דפדפן לא יודע לקרוא ישירות קובץ Access/MDB או קובצי אגרון כמו ‎.a3.
-" +
-          "כדי להציג נתונים כאן, צריך קודם להמיר את הקובץ ל־TXT/CSV/JSON או לבנות צד שרת שקורא את בסיס הנתונים."
-        );
+      if (["mdb", "a", "a2", "a3"].indexOf(ext) >= 0) {
+        fileStatus.textContent = "נבחר קובץ: " + name;
+        showError("הדפדפן לא יכול לקרוא ישירות קובץ Access או קובץ אגרון. צריך להמיר אותו קודם ל TXT, CSV או JSON.");
         return;
       }
 
       try {
         const buffer = await file.arrayBuffer();
         const decoded = decodeTextFromBuffer(buffer);
-        const text = decoded.text;
-        const rows = ext === "json" ? parseJson(text) : parseDelimitedText(text);
+        const parsed = ext === "json" ? parseJson(decoded.text) : parseDelimitedText(decoded.text);
 
-        if (!rows.length) {
-          showError("הקובץ נקרא, אבל לא נמצאו בו שורות נתונים מתאימות. ודא שיש שורת כותרות ושורות נתונים.");
+        if (!parsed.rows.length) {
+          showError("הקובץ נקרא, אבל לא נמצאו שורות להצגה. הקוד החדש תומך גם בקובץ TXT בלי שורת כותרות, לכן אם ההודעה חוזרת כנראה שהקובץ ריק או לא טקסטואלי.");
         } else {
-          showInfo(`הקובץ נקרא בהצלחה. זוהה קידוד: ${decoded.encoding}`);
+          showInfo("הקובץ נקרא בהצלחה. זוהו " + parsed.rows.length + " שורות. קידוד: " + decoded.encoding);
         }
 
-        setRows(rows, name, decoded.encoding);
+        setRows(parsed.rows, name, decoded.encoding, parsed.columns);
       } catch (error) {
         showError("אירעה שגיאה בקריאת הקובץ: " + error.message);
       }
     }
 
-    uploadArea.addEventListener("click", () => fileInput.click());
-    uploadArea.addEventListener("keydown", event => {
-      if (event.key === "Enter" || event.key === " ") fileInput.click();
+    uploadArea.addEventListener("keydown", function(event) {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        fileInput.click();
+      }
     });
-
-    fileInput.addEventListener("change", event => {
+    fileInput.addEventListener("change", function(event) {
       const file = event.target.files && event.target.files[0];
       if (file) handleFile(file);
     });
@@ -683,23 +934,8 @@
     document.getElementById("clearBtn").addEventListener("click", clearSearch);
     document.getElementById("demoBtn").addEventListener("click", loadDemoData);
 
-    fields.forEach(field => {
-      document.getElementById(field).addEventListener("keydown", event => {
-        if (event.key === "Enter") searchRows();
-      });
-    });
-
-    document.querySelectorAll("th[data-key]").forEach(th => {
-      th.addEventListener("click", () => {
-        const key = th.dataset.key;
-        if (state.sortKey === key) {
-          state.sortDirection = state.sortDirection === "asc" ? "desc" : "asc";
-        } else {
-          state.sortKey = key;
-          state.sortDirection = "asc";
-        }
-        renderTable();
-      });
+    fields.forEach(function(field) {
+      document.getElementById(field).addEventListener("keydown", function(event) { if (event.key === "Enter") searchRows(); });
     });
 
     renderTable();
