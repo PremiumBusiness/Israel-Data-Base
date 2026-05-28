@@ -1,0 +1,920 @@
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { 
+  Search, UploadCloud, FileText, Database, Shield, LogIn, 
+  Check, Copy, Download, ChevronLeft, ChevronRight, Menu, 
+  X, Bell, User, Activity, Clock, FileWarning, SearchX
+} from 'lucide-react';
+
+// --- MOCK DATA GENERATOR ---
+const generateMockData = () => {
+  const cities = ['חיפה', 'תל אביב', 'ירושלים', 'ראשון לציון', 'פתח תקווה', 'באר שבע', 'אשדוד', 'נתניה'];
+  const streets = ['לוין גוטל', 'דיזנגוף', 'הרצל', 'זאב זבוטינסקי', 'הנשיא', 'רוטשילד', 'העצמאות', 'הכלנית'];
+  const lastNames = ['לוי', 'כהן', 'אברהם', 'יצחק', 'דוד', 'מזרחי', 'פרץ', 'ביטון', 'שרון', 'גולן'];
+  const firstNames = ['רועי', 'דוד', 'משה', 'יעקב', 'יוסי', 'רחל', 'שרה', 'מיכל', 'נועה', 'אבי'];
+  
+  let mockTxt = '';
+  for (let i = 0; i < 500; i++) {
+    const city = cities[Math.floor(Math.random() * cities.length)];
+    const street = streets[Math.floor(Math.random() * streets.length)] + ' ' + Math.floor(Math.random() * 100);
+    const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+    const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
+    const id = '3' + Math.floor(Math.random() * 100000000).toString().padStart(8, '0');
+    
+    mockTxt += `'898${i}','${firstName}','${lastName}','${id}','','${street}, ${city}','0','0','false','426'\n`;
+  }
+  return mockTxt;
+};
+
+// --- UTILS ---
+const debounce = (func, delay) => {
+  let timeoutId;
+  return (...args) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      func(...args);
+    }, delay);
+  };
+};
+
+const cleanString = (str) => {
+  if (!str) return '';
+  return str.replace(/^'|'$/g, '').trim();
+};
+
+const parseLine = (line, index) => {
+  let l = line.trim();
+  if (!l) return null;
+  
+  if (l.startsWith("'") && l.endsWith("'")) {
+    l = l.slice(1, -1);
+  }
+  
+  const parts = l.split("','");
+  if (parts.length < 6) return null;
+
+  let addressFull = parts[5] || '';
+  let addressStr = addressFull;
+  let cityStr = '';
+  
+  if (addressFull.includes(',')) {
+    const addrSplit = addressFull.split(',');
+    addressStr = addrSplit[0].trim();
+    cityStr = addrSplit.slice(1).join(',').trim();
+  }
+  
+  return {
+    _id: index,
+    firstName: cleanString(parts[1]),
+    lastName: cleanString(parts[2]),
+    idNumber: cleanString(parts[3]),
+    address: cleanString(addressStr),
+    city: cleanString(cityStr)
+  };
+};
+
+// --- COMPONENTS ---
+
+const Toast = ({ message, type, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 3000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  // צבעים מותאמים לעיצוב בהיר
+  const bgColors = {
+    success: 'bg-green-50 border-green-200 text-green-700',
+    error: 'bg-red-50 border-red-200 text-red-700',
+    info: 'bg-blue-50 border-blue-200 text-blue-700'
+  };
+
+  return (
+    <div className={`fixed bottom-4 left-4 p-4 rounded-lg border shadow-lg flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5 ${bgColors[type] || bgColors.info} z-50`}>
+      {type === 'success' && <Check size={18} />}
+      {type === 'error' && <FileWarning size={18} />}
+      {type === 'info' && <Bell size={18} />}
+      <span className="font-medium text-sm">{message}</span>
+    </div>
+  );
+};
+
+const Highlight = ({ text, highlight }) => {
+  if (!highlight.trim() || !text) return <span>{text}</span>;
+  
+  const terms = highlight.trim().split(/\s+/).map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const regex = new RegExp(`(${terms.join('|')})`, 'gi');
+  const parts = text.split(regex);
+  
+  return (
+    <span>
+      {parts.map((part, i) => 
+        regex.test(part) ? (
+          <mark key={i} className="bg-blue-200 text-blue-900 rounded px-1 font-medium">{part}</mark>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </span>
+  );
+};
+
+// --- MAIN APP ---
+export default function App() {
+  const [toast, setToast] = useState(null);
+  const [selectedRecord, setSelectedRecord] = useState(null);
+
+  const [activeFile, setActiveFile] = useState(null);
+  const [totalRecordsCount, setTotalRecordsCount] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchTime, setSearchTime] = useState(0);
+  const currentSearchId = useRef(0);
+  
+  // -- תוספות לחיפוש מתקדם --
+  const [isAdvancedSearch, setIsAdvancedSearch] = useState(false);
+  const [advancedSearchQuery, setAdvancedSearchQuery] = useState({
+    firstName: '', lastName: '', idNumber: '', city: '', address: ''
+  });
+  const fileInputRef = useRef(null);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
+
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+  };
+
+  const loadFileReference = async (file) => {
+    setIsUploading(true);
+    setUploadProgress(0);
+    setActiveFile(file);
+    
+    try {
+      const CHUNK_SIZE = 1024 * 1024 * 10; 
+      let offset = 0;
+      let totalLines = 0;
+      let initialResults = [];
+      let initialParsedCount = 0;
+      let leftover = '';
+
+      while (offset < file.size) {
+        const chunk = file.slice(offset, offset + CHUNK_SIZE);
+        const text = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = (e) => reject(e);
+          reader.readAsText(chunk);
+        });
+        
+        const lines = (leftover + text).split('\n');
+        leftover = lines.pop(); 
+        
+        totalLines += lines.length;
+
+        if (initialResults.length < 50) {
+            for (let i = 0; i < lines.length; i++) {
+                const parsed = parseLine(lines[i], initialParsedCount++);
+                if (parsed) {
+                    initialResults.push(parsed);
+                    if (initialResults.length >= 50) break;
+                }
+            }
+        }
+        
+        offset += CHUNK_SIZE;
+        setUploadProgress(Math.min(99, Math.floor((offset / file.size) * 100)));
+        
+        if (offset % (CHUNK_SIZE * 3) === 0) {
+           await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      }
+
+      setTotalRecordsCount(totalLines);
+      setSearchResults(initialResults);
+      setUploadProgress(100);
+      
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadProgress(0);
+        showToast(`הקובץ חובר בהצלחה. סה"כ ${totalLines.toLocaleString()} רשומות`, 'success');
+      }, 500);
+
+    } catch (error) {
+      console.error("Error reading file:", error);
+      setIsUploading(false);
+      setUploadProgress(0);
+      setActiveFile(null);
+      showToast('שגיאה בקריאת הקובץ.', 'error');
+    }
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.txt') && !file.name.toLowerCase().endsWith('.csv')) {
+      showToast('אנא העלה קובץ TXT בלבד', 'error');
+      return;
+    }
+    loadFileReference(file);
+  };
+
+  const loadMockData = () => {
+    const mockData = generateMockData();
+    const file = new File([mockData], "mock.txt", { type: "text/plain" });
+    loadFileReference(file);
+  };
+
+  const performSearch = useCallback(async (simpleQuery, advQuery, isAdv) => {
+    if (!activeFile) return;
+    
+    const searchId = ++currentSearchId.current;
+    
+    // בניה של מילות החיפוש בהתאם לסוג החיפוש
+    const searchTerms = isAdv 
+        ? Object.values(advQuery).filter(v => v.trim() !== '').map(v => v.toLowerCase().trim())
+        : simpleQuery.toLowerCase().trim().split(/\s+/).filter(v => v);
+        
+    if (searchTerms.length === 0) {
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    const start = performance.now();
+    
+    try {
+        const CHUNK_SIZE = 1024 * 1024 * 5; 
+        let offset = 0;
+        let leftover = '';
+        const results = [];
+        let recordIndex = 0;
+        
+        while (offset < activeFile.size && results.length < 200) { 
+            if (currentSearchId.current !== searchId) return;
+
+            const chunk = activeFile.slice(offset, offset + CHUNK_SIZE);
+            const text = await new Promise(r => { 
+                const reader = new FileReader(); 
+                reader.onload = e => r(e.target.result); 
+                reader.readAsText(chunk); 
+            });
+            
+            const lines = (leftover + text).split('\n');
+            leftover = lines.pop();
+
+            for (let i = 0; i < lines.length; i++) {
+                recordIndex++;
+                const lowerLine = lines[i].toLowerCase();
+                
+                // סינון ראשוני מהיר מתוך הדיסק
+                let isMatch = true;
+                for (let term of searchTerms) {
+                    if (!lowerLine.includes(term)) {
+                        isMatch = false;
+                        break;
+                    }
+                }
+
+                if (isMatch) {
+                    const parsed = parseLine(lines[i], recordIndex);
+                    if (parsed) {
+                        let strictMatch = true;
+                        
+                        // בדיקה קפדנית פר-שדה (במקרה של חיפוש מתקדם)
+                        if (isAdv) {
+                            if (advQuery.firstName && !parsed.firstName.toLowerCase().includes(advQuery.firstName.toLowerCase())) strictMatch = false;
+                            if (advQuery.lastName && !parsed.lastName.toLowerCase().includes(advQuery.lastName.toLowerCase())) strictMatch = false;
+                            if (advQuery.idNumber && !parsed.idNumber.includes(advQuery.idNumber)) strictMatch = false;
+                            if (advQuery.city && !parsed.city.toLowerCase().includes(advQuery.city.toLowerCase())) strictMatch = false;
+                            if (advQuery.address && !parsed.address.toLowerCase().includes(advQuery.address.toLowerCase())) strictMatch = false;
+                        }
+
+                        if (strictMatch) {
+                            results.push(parsed);
+                            if (results.length >= 200) break;
+                        }
+                    }
+                }
+            }
+            
+            offset += CHUNK_SIZE;
+            await new Promise(r => setTimeout(r, 0));
+        }
+
+        if (currentSearchId.current !== searchId) return; 
+
+        const end = performance.now();
+        setSearchResults(results);
+        setSearchTime((end - start).toFixed(2));
+        setIsSearching(false);
+        setCurrentPage(1);
+
+    } catch (e) {
+        console.error("Search error", e);
+        setIsSearching(false);
+    }
+  }, [activeFile]);
+
+  const debouncedSearch = useMemo(() => debounce((simple, adv, isAdv) => performSearch(simple, adv, isAdv), 300), [performSearch]);
+
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setSearchQuery(val);
+    if (val.trim()) {
+        setIsSearching(true);
+    } else {
+        setIsSearching(false);
+    }
+    debouncedSearch(val, advancedSearchQuery, false);
+  };
+
+  const handleAdvSearchChange = (field, val) => {
+    const newAdv = { ...advancedSearchQuery, [field]: val };
+    setAdvancedSearchQuery(newAdv);
+    const hasVals = Object.values(newAdv).some(v => v.trim() !== '');
+    if (hasVals) {
+        setIsSearching(true);
+    } else {
+        setIsSearching(false);
+    }
+    debouncedSearch(searchQuery, newAdv, true);
+  };
+  
+  const clearSearch = () => {
+    if (isAdvancedSearch) {
+       const empty = { firstName: '', lastName: '', idNumber: '', city: '', address: '' };
+       setAdvancedSearchQuery(empty);
+       setSearchQuery('');
+       performSearch('', empty, true);
+    } else {
+       setSearchQuery('');
+       performSearch('', advancedSearchQuery, false);
+    }
+  };
+
+  const exportToCSV = () => {
+    if (searchResults.length === 0) return;
+    const BOM = "\uFEFF";
+    let csvContent = BOM + "תעודת זהות,שם פרטי,שם משפחה,עיר,כתובת\n";
+    
+    searchResults.forEach(row => {
+      csvContent += `${row.idNumber},${row.firstName},${row.lastName},${row.city},${row.address}\n`;
+    });
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `export_${new Date().getTime()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('הקובץ יורד בהצלחה', 'success');
+  };
+
+  const copyToClipboard = (text) => {
+    try {
+      navigator.clipboard.writeText(text);
+      showToast('הועתק ללוח', 'success');
+    } catch (err) {
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      showToast('הועתק ללוח', 'success');
+    }
+  };
+
+  const paginatedData = searchResults.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const totalPages = Math.ceil(searchResults.length / itemsPerPage);
+
+  return (
+    <div dir="rtl" className="min-h-screen bg-slate-50 text-slate-800 font-sans flex overflow-hidden">
+      
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+      {/* Sidebar - Light Theme */}
+      <aside className="w-64 bg-white border-l border-slate-200 flex flex-col hidden md:flex z-20 shadow-xl shadow-slate-200/50">
+        <div className="p-6 flex items-center gap-3 border-b border-slate-100">
+          <div className="bg-blue-50 p-2 rounded-lg border border-blue-100 text-blue-600">
+            <Shield size={24} />
+          </div>
+          <div>
+            <h1 className="text-slate-800 font-bold tracking-wider">PF-DB SYSTEM</h1>
+            <p className="text-[10px] text-slate-500 tracking-widest font-mono">SECURE ACCESS</p>
+          </div>
+        </div>
+
+        <nav className="flex-1 px-4 py-6 space-y-2">
+          <a href="#" className="flex items-center gap-3 bg-blue-50 text-blue-600 border border-blue-100 px-4 py-3 rounded-xl transition-all font-medium">
+            <Search size={18} />
+            <span>חיפוש נתונים</span>
+          </a>
+          <a href="#" className="flex items-center gap-3 hover:bg-slate-50 text-slate-600 hover:text-slate-900 px-4 py-3 rounded-xl transition-all font-medium">
+            <Database size={18} />
+            <span>מאגרי מידע</span>
+          </a>
+          <a href="#" className="flex items-center gap-3 hover:bg-slate-50 text-slate-600 hover:text-slate-900 px-4 py-3 rounded-xl transition-all font-medium">
+            <Activity size={18} />
+            <span>סטטיסטיקות</span>
+          </a>
+        </nav>
+
+        <div className="p-4 border-t border-slate-100">
+          <div className="flex items-center gap-3 px-4 py-3 bg-slate-50 rounded-xl border border-slate-200">
+            <div className="w-8 h-8 bg-white border border-slate-200 rounded-full flex items-center justify-center text-slate-600">
+              <User size={16} />
+            </div>
+            <div>
+              <p className="text-sm text-slate-800 font-medium">Admin User</p>
+              <p className="text-xs text-emerald-600 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> מחובר
+              </p>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+        {/* Glow effect - Softened for light mode */}
+        <div className="absolute top-0 right-[20%] w-96 h-96 bg-blue-100/50 rounded-full mix-blend-multiply filter blur-[100px] pointer-events-none"></div>
+
+        {/* Topbar - Light Theme */}
+        <header className="h-16 border-b border-slate-200 bg-white/80 backdrop-blur-md flex items-center justify-between px-6 z-10 sticky top-0">
+          <div className="flex items-center gap-4">
+            <button className="md:hidden text-slate-500 hover:text-slate-800">
+              <Menu size={24} />
+            </button>
+            <h2 className="text-lg font-semibold text-slate-800">לוח בקרה</h2>
+          </div>
+          <div className="flex items-center gap-4">
+            {activeFile && (
+              <>
+                <button 
+                   onClick={() => fileInputRef.current?.click()}
+                   className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg border border-blue-200 hover:bg-blue-100 font-medium transition-colors flex items-center gap-1.5 shadow-sm"
+                >
+                   <UploadCloud size={14} />
+                   החלף קובץ נתונים
+                </button>
+                <input 
+                   type="file" 
+                   ref={fileInputRef} 
+                   className="hidden" 
+                   accept=".txt,.csv" 
+                   onChange={handleFileUpload} 
+                />
+              </>
+            )}
+            <span className="text-xs font-mono bg-slate-100 text-slate-600 px-2 py-1 rounded border border-slate-200 hidden md:inline-block">
+              v2.2.0 ADVANCED
+            </span>
+            <button className="relative text-slate-500 hover:text-slate-800 transition-colors">
+              <Bell size={20} />
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
+            </button>
+          </div>
+        </header>
+
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
+          
+          {/* Stats Row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm relative overflow-hidden group hover:border-blue-300 transition-all">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-10 -mt-10 blur-2xl group-hover:bg-blue-100 transition-all"></div>
+              <div className="flex items-center gap-4 relative z-10">
+                <div className="p-3 bg-blue-50 rounded-xl text-blue-600 border border-blue-100">
+                  <Database size={24} />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500 font-medium">סה"כ רשומות בקובץ</p>
+                  <p className="text-3xl font-bold text-slate-800 font-mono tracking-tight">{totalRecordsCount > 0 ? totalRecordsCount.toLocaleString() : '---'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm relative overflow-hidden group hover:border-cyan-300 transition-all">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-50 rounded-full -mr-10 -mt-10 blur-2xl group-hover:bg-cyan-100 transition-all"></div>
+              <div className="flex items-center gap-4 relative z-10">
+                <div className="p-3 bg-cyan-50 rounded-xl text-cyan-600 border border-cyan-100">
+                  <Activity size={24} />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500 font-medium">תוצאות שנמצאו</p>
+                  <p className="text-3xl font-bold text-slate-800 font-mono tracking-tight">
+                    {searchResults.length === 200 ? '200+' : searchResults.length}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm relative overflow-hidden group hover:border-emerald-300 transition-all">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-full -mr-10 -mt-10 blur-2xl group-hover:bg-emerald-100 transition-all"></div>
+              <div className="flex items-center gap-4 relative z-10">
+                <div className="p-3 bg-emerald-50 rounded-xl text-emerald-600 border border-emerald-100">
+                  <Clock size={24} />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-500 font-medium">זמן קריאה בדיסק</p>
+                  <p className="text-3xl font-bold text-slate-800 font-mono tracking-tight">{searchTime}ms</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className={`grid grid-cols-1 ${!activeFile ? 'lg:grid-cols-3' : ''} gap-8`}>
+            {/* Left Column: Upload (מוסתר כאשר נטען קובץ) */}
+            {!activeFile && (
+                <div className="space-y-6 lg:col-span-1 animate-in fade-in slide-in-from-right-4 duration-500">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+                    <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                      <FileText size={20} className="text-blue-500" />
+                      חיבור קובץ TXT
+                    </h3>
+                    
+                    <div className="relative">
+                      <input 
+                        type="file" 
+                        accept=".txt,.csv" 
+                        onChange={handleFileUpload}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        title="לחץ לבחירת קובץ"
+                      />
+                      <div className={`border-2 border-dashed ${isUploading ? 'border-blue-400 bg-blue-50' : 'border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-slate-100'} rounded-xl p-8 flex flex-col items-center justify-center text-center transition-all duration-300`}>
+                        <UploadCloud size={40} className={`mb-3 ${isUploading ? 'text-blue-500 animate-bounce' : 'text-slate-400'}`} />
+                        <p className="text-slate-700 font-medium mb-1">
+                          גרור קובץ לכאן או לחץ לבחירה
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          תומך בקבצי ענק (ללא הגבלת גודל)
+                        </p>
+                      </div>
+                    </div>
+
+                    {isUploading && (
+                      <div className="mt-4 space-y-2">
+                        <div className="flex justify-between text-xs text-slate-500 font-medium">
+                          <span>סורק קובץ...</span>
+                          <span>{uploadProgress}%</span>
+                        </div>
+                        <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-blue-500 transition-all duration-300 ease-out"
+                            style={{ width: `${uploadProgress}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    )}
+
+                    {!isUploading && (
+                      <button 
+                        onClick={loadMockData}
+                        className="w-full mt-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-medium border border-slate-200 shadow-sm transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Database size={16} className="text-slate-400" />
+                        טען נתוני דמו לבדיקה
+                      </button>
+                    )}
+                  </div>
+                </div>
+            )}
+
+            {/* Right Column: Search & Table */}
+            <div className={`space-y-6 transition-all duration-500 ${!activeFile ? 'lg:col-span-2' : ''}`}>
+              
+              {/* Search Panel */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm relative transition-all">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
+                      {isAdvancedSearch ? 'חיפוש ממוקד לפי שדות' : 'חיפוש חופשי מהיר'}
+                    </h3>
+                    <button 
+                        onClick={() => {
+                           setIsAdvancedSearch(!isAdvancedSearch);
+                           if (isAdvancedSearch) performSearch(searchQuery, advancedSearchQuery, false);
+                           else performSearch(searchQuery, advancedSearchQuery, true);
+                        }}
+                        className="text-sm text-blue-600 font-medium hover:text-blue-800 transition-colors flex items-center gap-1 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg"
+                    >
+                        {isAdvancedSearch ? 'חזור לחיפוש רגיל' : 'חיפוש מתקדם'}
+                    </button>
+                </div>
+
+                {!isAdvancedSearch ? (
+                    <div className="relative flex items-center bg-slate-50 border border-slate-200 rounded-xl focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+                      <div className="absolute right-4 text-blue-500">
+                        {isSearching ? <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div> : <Search size={20} />}
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="חיפוש חופשי מכל השדות (ת.ז, שם פרטי, עיר...)"
+                        value={searchQuery}
+                        onChange={handleSearchChange}
+                        disabled={!activeFile}
+                        className="w-full bg-transparent border-none py-3.5 pr-12 pl-12 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-0 text-base disabled:opacity-50"
+                      />
+                      {searchQuery && (
+                        <button 
+                          onClick={clearSearch}
+                          className="absolute left-4 text-slate-400 hover:text-slate-600 bg-white hover:bg-slate-200 p-1.5 rounded-full shadow-sm transition-colors"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
+                ) : (
+                    <div className="relative bg-slate-50 p-4 border border-slate-200 rounded-xl animate-in fade-in slide-in-from-top-2">
+                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+                          <input
+                             type="text"
+                             placeholder="שם פרטי"
+                             value={advancedSearchQuery.firstName}
+                             onChange={(e) => handleAdvSearchChange('firstName', e.target.value)}
+                             disabled={!activeFile}
+                             className="w-full bg-white border border-slate-200 py-2.5 px-3 rounded-lg text-slate-800 placeholder-slate-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none text-sm disabled:opacity-50"
+                          />
+                          <input
+                             type="text"
+                             placeholder="שם משפחה"
+                             value={advancedSearchQuery.lastName}
+                             onChange={(e) => handleAdvSearchChange('lastName', e.target.value)}
+                             disabled={!activeFile}
+                             className="w-full bg-white border border-slate-200 py-2.5 px-3 rounded-lg text-slate-800 placeholder-slate-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none text-sm disabled:opacity-50"
+                          />
+                          <input
+                             type="text"
+                             placeholder="ת.ז / ח.פ"
+                             value={advancedSearchQuery.idNumber}
+                             onChange={(e) => handleAdvSearchChange('idNumber', e.target.value)}
+                             disabled={!activeFile}
+                             className="w-full bg-white border border-slate-200 py-2.5 px-3 rounded-lg text-slate-800 placeholder-slate-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none text-sm disabled:opacity-50"
+                          />
+                          <input
+                             type="text"
+                             placeholder="עיר מגורים"
+                             value={advancedSearchQuery.city}
+                             onChange={(e) => handleAdvSearchChange('city', e.target.value)}
+                             disabled={!activeFile}
+                             className="w-full bg-white border border-slate-200 py-2.5 px-3 rounded-lg text-slate-800 placeholder-slate-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none text-sm disabled:opacity-50"
+                          />
+                          <input
+                             type="text"
+                             placeholder="כתובת"
+                             value={advancedSearchQuery.address}
+                             onChange={(e) => handleAdvSearchChange('address', e.target.value)}
+                             disabled={!activeFile}
+                             className="w-full bg-white border border-slate-200 py-2.5 px-3 rounded-lg text-slate-800 placeholder-slate-400 focus:border-blue-400 focus:ring-1 focus:ring-blue-400 focus:outline-none text-sm disabled:opacity-50"
+                          />
+                       </div>
+                       
+                       <div className="mt-3 flex justify-between items-center h-6">
+                          <div className="flex items-center gap-2">
+                             {isSearching && <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>}
+                             {isSearching && <span className="text-xs text-blue-600 font-medium">סורק מידע...</span>}
+                          </div>
+                          
+                          {Object.values(advancedSearchQuery).some(v => v.trim() !== '') && (
+                            <button 
+                              onClick={clearSearch}
+                              className="text-xs flex items-center gap-1 text-slate-500 hover:text-slate-800 bg-white border border-slate-200 hover:bg-slate-100 px-3 py-1.5 rounded-lg transition-colors shadow-sm"
+                            >
+                              <X size={14} /> נקה חיפוש
+                            </button>
+                          )}
+                       </div>
+                    </div>
+                )}
+              </div>
+
+              {/* Data Table */}
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden">
+                <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50/50">
+                  <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                    תוצאות מערכת 
+                    {searchResults.length > 0 && <span className="text-xs font-normal text-slate-500 mr-2 bg-slate-200 px-2 py-0.5 rounded-full">(מוגבל ל-200 תוצאות)</span>}
+                  </h3>
+                  <button 
+                    onClick={exportToCSV}
+                    disabled={searchResults.length === 0}
+                    className="flex items-center gap-2 text-sm bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 font-medium px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm transition-colors"
+                  >
+                    <Download size={16} className="text-slate-400" />
+                    ייצוא CSV
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto min-h-[400px]">
+                  {searchResults.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full py-24 text-slate-400">
+                      <div className="bg-slate-50 p-4 rounded-full mb-4">
+                        <SearchX size={40} className="text-slate-300" />
+                      </div>
+                      <p className="text-lg font-medium text-slate-600">{activeFile ? "לא נמצאו תוצאות לחיפוש" : "אנא חבר קובץ נתונים כדי להתחיל"}</p>
+                    </div>
+                  ) : (
+                    <table className="w-full text-right border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-sm">
+                          <th className="py-3 px-6 font-semibold">ת.ז / ח.פ</th>
+                          <th className="py-3 px-6 font-semibold">שם פרטי</th>
+                          <th className="py-3 px-6 font-semibold">שם משפחה</th>
+                          <th className="py-3 px-6 font-semibold">עיר</th>
+                          <th className="py-3 px-6 font-semibold">כתובת</th>
+                          <th className="py-3 px-6 font-semibold w-16">פעולות</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {paginatedData.map((row) => {
+                          const highlightText = isAdvancedSearch 
+                             ? Object.values(advancedSearchQuery).filter(v => v.trim()).join(' ') 
+                             : searchQuery;
+                             
+                          return (
+                          <tr 
+                            key={row._id} 
+                            onClick={() => setSelectedRecord(row)}
+                            className="border-b border-slate-100 hover:bg-blue-50/50 transition-colors group cursor-pointer"
+                          >
+                            <td className="py-3 px-6 font-mono text-blue-600 font-medium">
+                              <Highlight text={row.idNumber} highlight={highlightText} />
+                            </td>
+                            <td className="py-3 px-6 text-slate-800 font-medium">
+                              <Highlight text={row.firstName} highlight={highlightText} />
+                            </td>
+                            <td className="py-3 px-6 text-slate-800 font-medium">
+                              <Highlight text={row.lastName} highlight={highlightText} />
+                            </td>
+                            <td className="py-3 px-6 text-slate-600">
+                              <Highlight text={row.city} highlight={highlightText} />
+                            </td>
+                            <td className="py-3 px-6 text-slate-600">
+                              <Highlight text={row.address} highlight={highlightText} />
+                            </td>
+                            <td className="py-3 px-6">
+                              <button 
+                                onClick={(e) => { 
+                                  e.stopPropagation();
+                                  copyToClipboard(`${row.idNumber} - ${row.firstName} ${row.lastName}`);
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-100 rounded-md transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                title="העתק רשומה"
+                              >
+                                <Copy size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        )})}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between p-4 border-t border-slate-200 bg-slate-50">
+                    <span className="text-sm text-slate-600 font-mono">
+                      מציג {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, searchResults.length)} מתוך {searchResults.length}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                      >
+                        <ChevronRight size={18} />
+                      </button>
+                      <span className="text-sm text-slate-700 font-bold px-2">
+                        {currentPage} / {totalPages}
+                      </span>
+                      <button 
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                        className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                      >
+                        <ChevronLeft size={18} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </div>
+          
+        </div>
+      </main>
+
+      {/* Record Details Modal - Light Theme */}
+      {selectedRecord && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setSelectedRecord(null)}
+        >
+          <div 
+            className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden relative animate-in zoom-in-95 duration-200"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50/50">
+              <h3 className="text-xl font-bold text-slate-800 flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg text-blue-600 border border-blue-200">
+                  <User size={20} />
+                </div>
+                כרטיס מידע מורחב
+              </h3>
+              <button 
+                onClick={() => setSelectedRecord(null)} 
+                className="text-slate-400 hover:text-slate-700 bg-white hover:bg-slate-100 border border-transparent hover:border-slate-200 p-2 rounded-lg transition-all"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            {/* Modal Body */}
+            <div className="p-6">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6 shadow-sm">
+                <div className="flex items-center gap-4 mb-1">
+                  <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center border-2 border-slate-200 shadow-sm">
+                    <User size={32} className="text-slate-400" />
+                  </div>
+                  <div>
+                    <h4 className="text-2xl font-bold text-slate-800">
+                      {selectedRecord.firstName} {selectedRecord.lastName}
+                    </h4>
+                    <div className="flex items-center gap-2 text-blue-600 font-mono mt-1 font-medium">
+                      <Shield size={14} />
+                      {selectedRecord.idNumber}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
+                  <p className="text-xs text-slate-500 mb-1 flex items-center gap-1 font-medium">שם פרטי</p>
+                  <p className="text-lg text-slate-800 font-bold">{selectedRecord.firstName || '-'}</p>
+                </div>
+                <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
+                  <p className="text-xs text-slate-500 mb-1 flex items-center gap-1 font-medium">שם משפחה</p>
+                  <p className="text-lg text-slate-800 font-bold">{selectedRecord.lastName || '-'}</p>
+                </div>
+                <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
+                  <p className="text-xs text-slate-500 mb-1 flex items-center gap-1 font-medium">עיר מגורים</p>
+                  <p className="text-lg text-slate-800 font-bold">{selectedRecord.city || '-'}</p>
+                </div>
+                <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
+                  <p className="text-xs text-slate-500 mb-1 flex items-center gap-1 font-medium">כתובת</p>
+                  <p className="text-lg text-slate-800 font-bold">{selectedRecord.address || '-'}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+              <button
+                onClick={() => setSelectedRecord(null)}
+                className="px-4 py-2 text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg transition-colors text-sm font-medium shadow-sm"
+              >
+                סגור
+              </button>
+              <button
+                onClick={() => {
+                  copyToClipboard(`שם: ${selectedRecord.firstName} ${selectedRecord.lastName} | ת.ז: ${selectedRecord.idNumber} | כתובת: ${selectedRecord.address}, ${selectedRecord.city}`);
+                  setSelectedRecord(null); 
+                }}
+                className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-all shadow-md shadow-blue-500/30"
+              >
+                <Copy size={16} />
+                העתק את כל הפרטים
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Light Theme Scrollbar Styles */}
+      <style dangerouslySetInnerHTML={{__html: `
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #f8fafc;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #cbd5e1;
+          border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #94a3b8;
+        }
+      `}} />
+    </div>
+  );
+}
