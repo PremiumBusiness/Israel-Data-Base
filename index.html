@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>מערכת איתור נתונים - עיצוב בהיר</title>
+    <title>מערכת איתור נתונים מתקדמת</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React & ReactDOM (Cloudflare CDN - More stable for GitHub Pages) -->
+    <!-- React & ReactDOM -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
-    <!-- Babel for JSX (Cloudflare CDN) -->
+    <!-- Babel for JSX -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js" crossorigin="anonymous"></script>
     <style>
         body { background-color: #f8fafc; color: #1e293b; font-family: system-ui, -apple-system, sans-serif; }
@@ -25,7 +25,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
 
-        // --- SVGs - מומרים לרכיבים עצמאיים למניעת שגיאות רינדור ---
+        // --- SVGs ---
         const DatabaseIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>;
         const UploadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path><path d="M12 12v9"></path><path d="m16 16-4-4-4 4"></path></svg>;
         const SearchIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>;
@@ -33,16 +33,14 @@
         const UserIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>;
         const ShieldIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"></path></svg>;
         const MapPinIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>;
+        const UsersIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>;
 
-        // פונקציית הגנה מפני קריסות Regex בעת הקלדת תווים מיוחדים
         const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-        const Highlight = ({ text, query }) => {
-            if (!query || !text) return <span>{text}</span>;
-            const terms = query.trim().split(/\s+/).filter(t => t);
-            if (terms.length === 0) return <span>{text}</span>;
+        const Highlight = ({ text, queryTerms }) => {
+            if (!text || !queryTerms || queryTerms.length === 0) return <span>{text}</span>;
             
-            const safeTerms = terms.map(escapeRegExp);
+            const safeTerms = queryTerms.map(escapeRegExp);
             const regex = new RegExp(`(${safeTerms.join('|')})`, 'gi');
             const parts = text.split(regex);
             
@@ -57,6 +55,7 @@
 
         function App() {
             const [activeFile, setActiveFile] = useState(null);
+            const [fileEncoding, setFileEncoding] = useState('UTF-8');
             const [totalRecords, setTotalRecords] = useState(0);
             
             const [results, setResults] = useState([]);
@@ -66,20 +65,119 @@
             const [isScanning, setIsScanning] = useState(false);
             const [scanProgress, setScanProgress] = useState(0);
             
-            const [searchQuery, setSearchQuery] = useState('');
+            const [searchParams, setSearchParams] = useState({
+                idNumber: '', firstName: '', lastName: '', city: '', address: ''
+            });
             const [isSearching, setIsSearching] = useState(false);
+            
             const [selectedRecord, setSelectedRecord] = useState(null);
             const [showMap, setShowMap] = useState(false);
             const fileInputRef = useRef(null);
 
+            const handleSearchChange = (field, value) => {
+                setSearchParams(prev => ({ ...prev, [field]: value }));
+            };
+
+            const clearSearch = () => {
+                setSearchParams({ idNumber: '', firstName: '', lastName: '', city: '', address: '' });
+            };
+
+            const searchFamily = () => {
+                if (!selectedRecord) return;
+                setSearchParams({
+                    idNumber: '',
+                    firstName: '',
+                    lastName: selectedRecord.lastName,
+                    city: selectedRecord.city,
+                    address: selectedRecord.address
+                });
+                setSelectedRecord(null);
+                setShowMap(false);
+            };
+
+            // מנוע זיהוי קידוד עברית חכם ומוחלט (פותר בעיות ג'יבריש)
+            const detectEncoding = async (file) => {
+                const chunk = file.slice(0, Math.min(1024 * 50, file.size)); // דוגם את ה-50KB הראשונים
+                const buffer = await new Promise(res => {
+                    const r = new FileReader();
+                    r.onload = ev => res(ev.target.result);
+                    r.readAsArrayBuffer(chunk);
+                });
+                
+                try {
+                    // מנסה לפענח כ-UTF-8. ה-fatal: true יזרוק שגיאה אם הקידוד הוא Windows-1255 ישראלי
+                    const decoderUtf8 = new TextDecoder('utf-8', { fatal: true });
+                    const textUtf8 = decoderUtf8.decode(buffer);
+                    
+                    // בודק אם ה-UTF-8 באמת מכיל אותיות בעברית תקניות
+                    if (/[\u0590-\u05FF]/.test(textUtf8)) {
+                        return 'UTF-8';
+                    }
+                } catch (e) {
+                    // ברגע שיש חריגה ב-UTF-8 (נפוץ מאוד בקבצי CSV/מסד בארץ), אנחנו יודעים שזה חלונות-1255
+                    return 'windows-1255';
+                }
+                
+                // ברירת מחדל בטוחה
+                return 'windows-1255';
+            };
+
+            // חילוץ נתונים חכם ועקבי לתעודת זהות ושדות מקובלים
+            const extractFields = (line) => {
+                let sep = line.includes("','") ? "','" : (line.includes("\t") ? "\t" : (line.includes(";") ? ";" : ","));
+                let parts = line.split(sep).map(p => p.replace(/^['"]|['"]$/g, '').trim());
+                
+                let idNumber = '', firstName = '', lastName = '', cityStr = '', addressStr = '';
+
+                if (parts.length >= 2) {
+                    // היוריסטיקה מתקדמת לחילוץ ת.ז מדויק (ולא טלפון) - תבנית של 8-9 ספרות נקיות
+                    if (parts[0] && /^\d{8,9}$/.test(parts[0])) {
+                        idNumber = parts[0];
+                        firstName = parts[1] || '';
+                        lastName = parts[2] || '';
+                        cityStr = parts[3] || '';
+                        addressStr = parts[4] || '';
+                    } else if (parts[3] && /^\d{8,9}$/.test(parts[3])) {
+                        idNumber = parts[3];
+                        firstName = parts[1] || '';
+                        lastName = parts[2] || '';
+                        cityStr = parts[4] || '';
+                        addressStr = parts[5] || '';
+                    } else if (parts[2] && /^\d{8,9}$/.test(parts[2])) {
+                        idNumber = parts[2];
+                        firstName = parts[0] || '';
+                        lastName = parts[1] || '';
+                        cityStr = parts[3] || '';
+                        addressStr = parts[4] || '';
+                    } else {
+                        // נפילה אחורנית למיפוי גנרי
+                        idNumber = parts.find(p => /^\d{8,9}$/.test(p)) || parts[3] || parts[0] || '';
+                        firstName = parts[1] || '';
+                        lastName = parts[2] || '';
+                        cityStr = parts[4] || '';
+                        addressStr = parts[5] || '';
+                    }
+                }
+                return { idNumber, firstName, lastName, cityStr, addressStr };
+            };
+
             const processFile = async (file) => {
                 if (!file) return;
+                
+                if (file.name.toLowerCase().endsWith('.mdb') || file.name.toLowerCase().endsWith('.accdb')) {
+                    alert('המערכת מזהה קובץ Jet DB בינארי. אנא ייצא את הנתונים לקובץ טקסט (CSV/TXT) מתוך תוכנת Access כדי שהמערכת תוכל לקרוא, למפות ולפענח את השדות אוטומטית.');
+                    return;
+                }
+
                 setActiveFile(file);
                 setIsScanning(true);
                 setScanProgress(0);
-                setStatusMsg('סורק את הקובץ...');
-                setSearchQuery('');
+                setStatusMsg('מזהה קידוד למניעת ג\'יבריש...');
+                clearSearch();
                 setResults([]);
+
+                const encoding = await detectEncoding(file);
+                setFileEncoding(encoding);
 
                 let offset = 0;
                 const CHUNK_SIZE = 1024 * 1024 * 5;
@@ -94,7 +192,7 @@
                         const text = await new Promise(res => {
                             const r = new FileReader();
                             r.onload = ev => res(ev.target.result);
-                            r.readAsText(chunk);
+                            r.readAsText(chunk, encoding); // שימוש בקידוד המדויק שנמצא
                         });
 
                         const lines = (leftover + text).split(/\r?\n/);
@@ -103,28 +201,16 @@
                         count += lines.length;
 
                         if (initResults.length < 50) {
-                            // תוקן הרווח בלולאה למניעת קריסת Babel
                             for (let i = 0; i < lines.length; i++) {
                                 let line = lines[i].trim();
                                 if (!line) continue;
-                                if (line.startsWith("'") && line.endsWith("'")) line = line.slice(1, -1);
                                 
-                                const parts = line.split("','");
-                                if (parts.length >= 6) {
-                                    let addressFull = parts[5] || '';
-                                    let addressStr = addressFull, cityStr = '';
-                                    if (addressFull.includes(',')) {
-                                        const addrSplit = addressFull.split(',');
-                                        addressStr = addrSplit[0].trim();
-                                        cityStr = addrSplit.slice(1).join(',').trim();
-                                    }
+                                const { idNumber, firstName, lastName, cityStr, addressStr } = extractFields(line);
+
+                                if (idNumber || firstName || lastName) {
                                     initResults.push({
                                         id: recordId++,
-                                        firstName: (parts[1] || '').trim(),
-                                        lastName: (parts[2] || '').trim(),
-                                        idNumber: (parts[3] || '').trim(),
-                                        address: addressStr,
-                                        city: cityStr
+                                        firstName, lastName, idNumber, address: addressStr, city: cityStr
                                     });
                                     if (initResults.length >= 50) break;
                                 }
@@ -134,14 +220,14 @@
                         offset += CHUNK_SIZE;
                         const progress = Math.min(100, Math.round((offset / file.size) * 100));
                         setScanProgress(progress);
-                        setStatusMsg(`מכין נתונים לחיפוש... ${progress}%`);
+                        setStatusMsg(`טוען נתונים בקידוד ${encoding}... ${progress}%`);
                         
                         await new Promise(r => setTimeout(r, 0));
                     }
                     setTotalRecords(count);
                     setInitialData(initResults);
                     setResults(initResults);
-                    setStatusMsg(`מוכן! הקובץ מכיל ${count.toLocaleString()} רשומות.`);
+                    setStatusMsg(`מוכן! הקובץ מופה בהצלחה (${count.toLocaleString()} רשומות).`);
                 } catch(err) {
                     console.error(err);
                     setStatusMsg('שגיאה בקריאת הקובץ.');
@@ -153,10 +239,17 @@
             const setStatusMsg = (msg) => setUploadStatus(msg);
 
             useEffect(() => {
-                if(!activeFile || isScanning) return;
+                if (!activeFile || isScanning) return;
                 
-                const terms = searchQuery.toLowerCase().trim().split(/\s+/).filter(t=>t);
-                if(terms.length === 0) {
+                const activeFilters = Object.keys(searchParams).reduce((acc, key) => {
+                    const val = searchParams[key].trim().toLowerCase();
+                    if (val) acc[key] = val;
+                    return acc;
+                }, {});
+
+                const activeTerms = Object.values(activeFilters);
+
+                if (activeTerms.length === 0) {
                     setResults(initialData);
                     setIsSearching(false);
                     return;
@@ -172,51 +265,63 @@
                     let idCounter = 0;
 
                     try {
-                        while (offset < activeFile.size && found.length < 150) {
+                        while (offset < activeFile.size) {
                             if(isCancelled) return;
                             const chunk = activeFile.slice(offset, offset + CHUNK);
                             const text = await new Promise(res => {
                                 const r = new FileReader();
                                 r.onload = e => res(e.target.result);
-                                r.readAsText(chunk);
+                                // חובה להשתמש בקידוד הנכון גם בזמן החיפוש כדי למצוא התאמות לעברית שהוקלדה
+                                r.readAsText(chunk, fileEncoding); 
                             });
                             const lines = (leftover + text).split(/\r?\n/);
                             leftover = lines.pop();
 
-                            // תוקן הרווח בלולאה למניעת קריסת Babel
                             for (let i = 0; i < lines.length; i++) {
-                                idCounter++;
                                 let line = lines[i].trim();
-                                if(!line) continue;
+                                if (!line) continue;
                                 const lineLower = line.toLowerCase();
 
-                                if (terms.every(t => lineLower.includes(t))) {
-                                    if (line.startsWith("'") && line.endsWith("'")) line = line.slice(1, -1);
-                                    const parts = line.split("','");
-                                    if(parts.length >= 6) {
-                                        let addressFull = parts[5] || '';
-                                        let addressStr = addressFull, cityStr = '';
-                                        if (addressFull.includes(',')) {
-                                            const addrSplit = addressFull.split(',');
-                                            addressStr = addrSplit[0].trim();
-                                            cityStr = addrSplit.slice(1).join(',').trim();
-                                        }
-                                        found.push({
-                                            id: idCounter,
-                                            firstName: (parts[1]||'').trim(),
-                                            lastName: (parts[2]||'').trim(),
-                                            idNumber: (parts[3]||'').trim(),
-                                            address: addressStr,
-                                            city: cityStr
-                                        });
-                                        if (found.length >= 150) break;
+                                let containsAllTerms = true;
+                                for (let t = 0; t < activeTerms.length; t++) {
+                                    if (!lineLower.includes(activeTerms[t])) {
+                                        containsAllTerms = false;
+                                        break;
                                     }
                                 }
+
+                                if (containsAllTerms) {
+                                    idCounter++;
+                                    const { idNumber, firstName, lastName, cityStr, addressStr } = extractFields(line);
+                                    const record = { id: idCounter, firstName, lastName, idNumber, address: addressStr, city: cityStr };
+                                    
+                                    let score = 0;
+                                    for (let key in activeFilters) {
+                                        const term = activeFilters[key];
+                                        const fieldVal = (record[key] || '').toLowerCase();
+                                        
+                                        if (fieldVal === term) score += 10;
+                                        else if (fieldVal.includes(term)) score += 5;
+                                        else score += 1;
+                                    }
+
+                                    found.push({ ...record, _score: score });
+                                }
                             }
+                            
+                            if (found.length > 2000) {
+                                found.sort((a, b) => b._score - a._score);
+                                found.length = 500; 
+                            }
+
                             offset += CHUNK;
                             await new Promise(r => setTimeout(r, 0));
                         }
-                        if(!isCancelled) setResults(found);
+                        
+                        if (!isCancelled) {
+                            found.sort((a, b) => b._score - a._score);
+                            setResults(found.slice(0, 150));
+                        }
                     } catch(err) {
                         console.error(err);
                     } finally {
@@ -228,7 +333,7 @@
                     isCancelled = true;
                     clearTimeout(timer);
                 };
-            }, [searchQuery, activeFile, isScanning, initialData]);
+            }, [searchParams, activeFile, isScanning, initialData, fileEncoding]);
 
             const handleRecordClick = (row) => {
                 setSelectedRecord(row);
@@ -247,6 +352,8 @@
                 window.open(`https://www.google.com/maps/search/${encodeURIComponent(fullAddress)}`, '_blank');
             };
 
+            const activeQueryTerms = Object.values(searchParams).filter(v => v.trim() !== '');
+
             return (
                 <div className="min-h-screen p-4 md:p-8 custom-scrollbar">
                     
@@ -258,8 +365,8 @@
                                     <DatabaseIcon />
                                 </div>
                                 <div>
-                                    <h1 className="text-2xl font-bold text-slate-800">מערכת איתור נתונים</h1>
-                                    <p className="text-xs text-blue-600 font-bold tracking-widest uppercase mt-0.5">Israel Data Base</p>
+                                    <h1 className="text-2xl font-bold text-slate-800">מערכת איתור נתונים מתקדמת</h1>
+                                    <p className="text-xs text-blue-600 font-bold tracking-widest uppercase mt-0.5">SMART DATA CROSS-REFERENCE</p>
                                 </div>
                             </div>
                             
@@ -273,28 +380,30 @@
                                 <button 
                                     onClick={() => fileInputRef.current.click()}
                                     disabled={isScanning}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium transition-all shadow-md shadow-blue-600/20 disabled:opacity-50"
+                                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium transition-all shadow-md shadow-blue-600/20 disabled:opacity-50 flex items-center gap-2"
                                 >
+                                    <UploadIcon width="18" height="18" />
                                     {activeFile ? 'החלף קובץ נתונים' : 'טען קובץ מערכת'}
                                 </button>
-                                <input type="file" ref={fileInputRef} accept=".txt,.csv" className="hidden" onChange={(e) => processFile(e.target.files[0])} />
+                                <input type="file" ref={fileInputRef} accept=".txt,.csv,.mdb,.accdb" className="hidden" onChange={(e) => processFile(e.target.files[0])} />
                             </div>
                         </header>
 
                         {!activeFile && !isScanning ? (
-                            <div className="bg-white border border-slate-200 border-dashed rounded-3xl p-16 text-center animate-in fade-in duration-700 shadow-sm">
+                            <div className="bg-white border border-slate-200 border-dashed rounded-3xl p-16 text-center shadow-sm">
                                 <div className="text-slate-400 flex justify-center mb-6">
                                     <UploadIcon />
                                 </div>
-                                <h2 className="text-2xl font-bold text-slate-700 mb-2">אין נתונים נגישים</h2>
-                                <p className="text-slate-500 mb-6">גרור קובץ למערכת או לחץ על הכפתור למעלה כדי להתחיל בסריקה ללא מגבלות גודל</p>
+                                <h2 className="text-2xl font-bold text-slate-700 mb-2">המערכת מוכנה לסריקה</h2>
+                                <p className="text-slate-500 mb-2">המערכת מזהה קידודים (כולל Windows-1255 עברית) ומשלימה שדות אוטומטית.</p>
+                                <p className="text-sm text-slate-400">יש לטעון קובץ תקין באמצעות הכפתור למעלה כדי להתחיל להצליב מידע.</p>
                             </div>
                         ) : (
-                            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col min-h-[60vh] animate-in slide-in-from-bottom-5">
+                            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col min-h-[60vh]">
                                 
-                                <div className="p-5 border-b border-slate-100 bg-slate-50">
+                                <div className="p-5 border-b border-slate-100 bg-slate-50 relative z-20">
                                     {isScanning ? (
-                                        <div className="py-2">
+                                        <div className="py-6">
                                             <div className="flex justify-between text-sm text-blue-600 font-medium mb-3">
                                                 <span>{uploadStatus}</span>
                                                 <span>{scanProgress}%</span>
@@ -304,40 +413,62 @@
                                             </div>
                                         </div>
                                     ) : (
-                                        <div className="relative flex flex-col gap-2">
-                                            <div className="relative flex items-center">
-                                                <div className="absolute right-4 text-slate-400">
-                                                    {isSearching ? (
-                                                        <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                                                    ) : <SearchIcon />}
-                                                </div>
-                                                <input
-                                                    type="text"
-                                                    placeholder="חיפוש חופשי מוצלב (לדוגמה: 'רועי חיפה לוין')..."
-                                                    value={searchQuery}
-                                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                                    className="w-full bg-white border border-slate-300 rounded-xl py-3.5 pr-12 pl-10 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-lg shadow-sm"
-                                                />
-                                                {searchQuery && (
-                                                    <button onClick={() => setSearchQuery('')} className="absolute left-4 text-slate-400 hover:text-slate-600 bg-slate-100 p-1.5 rounded-full transition-colors">
-                                                        <XIcon />
+                                        <div className="space-y-4">
+                                            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                                                <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                                                    <SearchIcon />
+                                                    מסנני הצלבת מידע
+                                                </h3>
+                                                {activeQueryTerms.length > 0 && (
+                                                    <button onClick={clearSearch} className="text-xs text-red-500 hover:text-red-700 font-medium bg-red-50 hover:bg-red-100 px-3 py-1 rounded-lg transition-colors">
+                                                        נקה חיפוש
                                                     </button>
                                                 )}
                                             </div>
-                                            <p className="text-xs text-slate-500 pr-2">💡 המערכת תומכת בחיפוש חלקי (לדוגמה: הזנת "3000896" תמצא גם את "300089653")</p>
+                                            
+                                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                                                <div className="flex flex-col">
+                                                    <label className="text-xs text-slate-500 font-medium mb-1 pl-1">ת.ז / ח.פ</label>
+                                                    <input type="text" value={searchParams.idNumber} onChange={(e) => handleSearchChange('idNumber', e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg py-2 px-3 text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <label className="text-xs text-slate-500 font-medium mb-1 pl-1">שם פרטי</label>
+                                                    <input type="text" value={searchParams.firstName} onChange={(e) => handleSearchChange('firstName', e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg py-2 px-3 text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <label className="text-xs text-slate-500 font-medium mb-1 pl-1">שם משפחה</label>
+                                                    <input type="text" value={searchParams.lastName} onChange={(e) => handleSearchChange('lastName', e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg py-2 px-3 text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <label className="text-xs text-slate-500 font-medium mb-1 pl-1">עיר</label>
+                                                    <input type="text" value={searchParams.city} onChange={(e) => handleSearchChange('city', e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg py-2 px-3 text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm" />
+                                                </div>
+                                                <div className="flex flex-col">
+                                                    <label className="text-xs text-slate-500 font-medium mb-1 pl-1">כתובת</label>
+                                                    <input type="text" value={searchParams.address} onChange={(e) => handleSearchChange('address', e.target.value)} className="w-full bg-white border border-slate-300 rounded-lg py-2 px-3 text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all shadow-sm" />
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
 
-                                <div className="overflow-x-auto flex-1">
-                                    {!isScanning && results.length === 0 ? (
+                                <div className="overflow-x-auto flex-1 relative min-h-[300px]">
+                                    {/* שכבת ההצללה והספינר (מופיעה בזמן חיפוש) */}
+                                    {isSearching && (
+                                        <div className="absolute inset-0 z-10 bg-white/70 backdrop-blur-[2px] flex flex-col items-center justify-center">
+                                            <div className="w-16 h-16 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin mb-4 shadow-lg"></div>
+                                            <p className="text-xl font-bold text-blue-600 animate-pulse">מצליב נתונים, אנא המתן...</p>
+                                        </div>
+                                    )}
+
+                                    {!isScanning && results.length === 0 && !isSearching ? (
                                         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
                                             <div className="bg-slate-100 p-4 rounded-full mb-4"><SearchIcon /></div>
-                                            <p className="text-lg font-medium text-slate-600">לא נמצאו תוצאות לחיפוש זה</p>
+                                            <p className="text-lg font-medium text-slate-600">לא נמצאו תוצאות בהתאם להצלבה</p>
                                         </div>
                                     ) : (
                                         <table className="w-full text-right border-collapse">
-                                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-sm font-semibold">
+                                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 text-sm font-semibold sticky top-0 z-0">
                                                 <tr>
                                                     <th className="py-4 px-6">ת.ז / ח.פ</th>
                                                     <th className="py-4 px-6">שם פרטי</th>
@@ -354,19 +485,19 @@
                                                         className="border-b border-slate-100 hover:bg-blue-50 cursor-pointer transition-colors"
                                                     >
                                                         <td className="py-4 px-6 font-mono text-blue-700 font-medium">
-                                                            <Highlight text={row.idNumber} query={searchQuery} />
+                                                            <Highlight text={row.idNumber} queryTerms={activeQueryTerms} />
                                                         </td>
                                                         <td className="py-4 px-6 text-slate-800 font-medium">
-                                                            <Highlight text={row.firstName} query={searchQuery} />
+                                                            <Highlight text={row.firstName} queryTerms={activeQueryTerms} />
                                                         </td>
                                                         <td className="py-4 px-6 text-slate-800 font-medium">
-                                                            <Highlight text={row.lastName} query={searchQuery} />
+                                                            <Highlight text={row.lastName} queryTerms={activeQueryTerms} />
                                                         </td>
                                                         <td className="py-4 px-6 text-slate-600">
-                                                            <Highlight text={row.city} query={searchQuery} />
+                                                            <Highlight text={row.city} queryTerms={activeQueryTerms} />
                                                         </td>
                                                         <td className="py-4 px-6 text-slate-600 text-sm">
-                                                            <Highlight text={row.address} query={searchQuery} />
+                                                            <Highlight text={row.address} queryTerms={activeQueryTerms} />
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -377,8 +508,8 @@
                                 
                                 {totalRecords > 0 && !isScanning && (
                                     <div className="p-3 border-t border-slate-100 bg-slate-50 text-xs text-slate-500 font-medium flex justify-between">
-                                        <span>מציג {results.length} רשומות רלוונטיות</span>
-                                        <span>תצוגה מוגבלת ל-150 תוצאות לשיפור ביצועי הדפדפן</span>
+                                        <span>מציג {results.length} רשומות (ממוין לפי רלוונטיות)</span>
+                                        <span>תצוגה מוגבלת ל-150 התוצאות הטובות ביותר</span>
                                     </div>
                                 )}
                             </div>
@@ -407,19 +538,29 @@
                                 </div>
                                 
                                 <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
-                                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6 flex items-center gap-4 shadow-sm">
-                                        <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center border-2 border-slate-200 shadow-sm">
-                                            <span className="text-slate-400"><UserIcon /></span>
-                                        </div>
-                                        <div>
-                                            <h4 className="text-2xl font-bold text-slate-800">
-                                                {selectedRecord.firstName} {selectedRecord.lastName}
-                                            </h4>
-                                            <div className="flex items-center gap-2 text-blue-600 font-mono mt-1 text-sm font-medium">
-                                                <ShieldIcon />
-                                                {selectedRecord.idNumber}
+                                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-sm">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center border-2 border-slate-200 shadow-sm shrink-0">
+                                                <span className="text-slate-400"><UserIcon /></span>
+                                            </div>
+                                            <div>
+                                                <h4 className="text-2xl font-bold text-slate-800">
+                                                    {selectedRecord.firstName} {selectedRecord.lastName}
+                                                </h4>
+                                                <div className="flex items-center gap-2 text-blue-600 font-mono mt-1 text-sm font-medium">
+                                                    <ShieldIcon />
+                                                    {selectedRecord.idNumber}
+                                                </div>
                                             </div>
                                         </div>
+                                        
+                                        <button 
+                                            onClick={searchFamily}
+                                            className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 px-4 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-colors w-full sm:w-auto justify-center shadow-sm"
+                                        >
+                                            <UsersIcon />
+                                            מצא בני משפחה באותה כתובת
+                                        </button>
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-4">
