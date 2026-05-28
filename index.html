@@ -350,7 +350,8 @@
       rows: [],
       filteredRows: [],
       sortKey: null,
-      sortDirection: "asc"
+      sortDirection: "asc",
+      lastEncoding: null
     };
 
     const fields = ["idNumber", "firstName", "lastName", "city", "address"];
@@ -374,32 +375,89 @@
       alertBox.style.display = "block";
     }
 
+    function showInfo(message) {
+      alertBox.textContent = message;
+      alertBox.style.display = "block";
+      alertBox.style.background = "#eff6ff";
+      alertBox.style.borderColor = "#bfdbfe";
+      alertBox.style.color = "#1e40af";
+    }
+
     function clearError() {
       alertBox.textContent = "";
       alertBox.style.display = "none";
+      alertBox.style.background = "";
+      alertBox.style.borderColor = "";
+      alertBox.style.color = "";
     }
 
     function normalizeText(value) {
       return String(value ?? "").trim().toLowerCase();
     }
 
+    function normalizeHeader(value) {
+      return String(value ?? "")
+        .replace(/^﻿/, "")
+        .replace(/[‎‏]/g, "")
+        .trim()
+        .toLowerCase();
+    }
+
     function normalizeRow(row) {
+      const normalized = {};
+      Object.keys(row || {}).forEach(key => {
+        normalized[normalizeHeader(key)] = row[key];
+      });
+
       return {
-        idNumber: row.idNumber ?? row.id ?? row["תעודת זהות"] ?? row["תז"] ?? row["מספר זהות"] ?? "",
-        firstName: row.firstName ?? row.first_name ?? row["שם פרטי"] ?? row["שם"] ?? "",
-        lastName: row.lastName ?? row.last_name ?? row["שם משפחה"] ?? row["משפחה"] ?? "",
-        city: row.city ?? row["עיר"] ?? row["ישוב"] ?? row["יישוב"] ?? "",
-        address: row.address ?? row["כתובת"] ?? row["רחוב"] ?? ""
+        idNumber:
+          row.idNumber ?? row.id ?? row.ID ??
+          normalized["תעודת זהות"] ?? normalized["תז"] ?? normalized["ת.ז"] ??
+          normalized["מספר זהות"] ?? normalized["מספר תעודת זהות"] ??
+          normalized["zehut"] ?? normalized["idnumber"] ?? normalized["id number"] ?? "",
+        firstName:
+          row.firstName ?? row.first_name ?? row.FirstName ??
+          normalized["שם פרטי"] ?? normalized["שם"] ?? normalized["firstname"] ?? normalized["first name"] ?? "",
+        lastName:
+          row.lastName ?? row.last_name ?? row.LastName ??
+          normalized["שם משפחה"] ?? normalized["משפחה"] ?? normalized["lastname"] ?? normalized["last name"] ?? "",
+        city:
+          row.city ?? row.City ??
+          normalized["עיר"] ?? normalized["ישוב"] ?? normalized["יישוב"] ?? normalized["city"] ?? "",
+        address:
+          row.address ?? row.Address ??
+          normalized["כתובת"] ?? normalized["רחוב"] ?? normalized["address"] ?? ""
       };
     }
 
-    function parseCsv(text) {
-      const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
+    function detectDelimiter(line) {
+      const delimiters = ["	", ",", ";", "|", "#"];
+      let bestDelimiter = ",";
+      let bestCount = 0;
+
+      delimiters.forEach(delimiter => {
+        const count = splitDelimitedLine(line, delimiter).length - 1;
+        if (count > bestCount) {
+          bestCount = count;
+          bestDelimiter = delimiter;
+        }
+      });
+
+      return bestDelimiter;
+    }
+
+    function parseDelimitedText(text) {
+      const cleanText = String(text || "").replace(/^﻿/, "");
+      const lines = cleanText.split(/
+?
+/).filter(line => line.trim() !== "");
       if (lines.length < 2) return [];
 
-      const headers = splitCsvLine(lines[0]).map(header => header.trim());
+      const delimiter = detectDelimiter(lines[0]);
+      const headers = splitDelimitedLine(lines[0], delimiter).map(header => header.trim());
+
       return lines.slice(1).map(line => {
-        const values = splitCsvLine(line);
+        const values = splitDelimitedLine(line, delimiter);
         const row = {};
         headers.forEach((header, index) => {
           row[header] = values[index] ?? "";
@@ -408,7 +466,7 @@
       });
     }
 
-    function splitCsvLine(line) {
+    function splitDelimitedLine(line, delimiter) {
       const result = [];
       let current = "";
       let inQuotes = false;
@@ -422,7 +480,7 @@
           i++;
         } else if (char === '"') {
           inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
+        } else if (char === delimiter && !inQuotes) {
           result.push(current.trim());
           current = "";
         } else {
@@ -441,10 +499,58 @@
       return rows.map(normalizeRow);
     }
 
-    function setRows(rows, fileName) {
+    function countHebrewCharacters(text) {
+      const match = String(text || "").match(/[֐-׿]/g);
+      return match ? match.length : 0;
+    }
+
+    function countBadCharacters(text) {
+      const match = String(text || "").match(/ /g);
+      return match ? match.length : 0;
+    }
+
+    function decodeTextFromBuffer(buffer) {
+      const bytes = new Uint8Array(buffer);
+
+      if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+        return { text: new TextDecoder("utf-8").decode(buffer), encoding: "UTF-8 BOM" };
+      }
+
+      const candidates = [
+        { label: "utf-8", name: "UTF-8" },
+        { label: "windows-1255", name: "Windows-1255 עברית" },
+        { label: "iso-8859-8", name: "ISO-8859-8 עברית" }
+      ];
+
+      let best = null;
+
+      candidates.forEach(candidate => {
+        try {
+          const text = new TextDecoder(candidate.label).decode(buffer);
+          const score = countHebrewCharacters(text) * 3 - countBadCharacters(text) * 20;
+          const option = { text, encoding: candidate.name, score };
+          if (!best || option.score > best.score) best = option;
+        } catch (error) {
+          // Some older browsers may not support every legacy encoding.
+        }
+      });
+
+      if (best) return { text: best.text, encoding: best.encoding };
+
+      return { text: new TextDecoder().decode(buffer), encoding: "ברירת מחדל של הדפדפן" };
+    }
+
+    function setRows(rows, fileName, encoding) {
       state.rows = rows;
       state.filteredRows = rows;
-      fileStatus.textContent = fileName ? `נטען קובץ: ${fileName}` : "נטענו נתוני דוגמה.";
+      state.lastEncoding = encoding || null;
+
+      if (fileName) {
+        fileStatus.textContent = `נטען קובץ: ${fileName}${encoding ? ` | קידוד: ${encoding}` : ""}`;
+      } else {
+        fileStatus.textContent = "נטענו נתוני דוגמה.";
+      }
+
       renderTable();
     }
 
@@ -530,7 +636,7 @@
       ]);
     }
 
-    function handleFile(file) {
+    async function handleFile(file) {
       clearError();
       const name = file.name || "";
       const ext = name.toLowerCase().split(".").pop();
@@ -538,34 +644,29 @@
       if (["mdb", "a", "a2", "a3"].includes(ext)) {
         fileStatus.textContent = `נבחר קובץ: ${name}`;
         showError(
-          "העמוד נטען תקין, אבל דפדפן לא יודע לקרוא ישירות קובץ Access/MDB או קובצי אגרון כמו ‎.a3.\n" +
-          "כדי להציג נתונים כאן, צריך קודם להמיר את הקובץ ל־CSV/JSON או לבנות צד שרת שקורא את בסיס הנתונים."
+          "העמוד נטען תקין, אבל דפדפן לא יודע לקרוא ישירות קובץ Access/MDB או קובצי אגרון כמו ‎.a3.
+" +
+          "כדי להציג נתונים כאן, צריך קודם להמיר את הקובץ ל־TXT/CSV/JSON או לבנות צד שרת שקורא את בסיס הנתונים."
         );
         return;
       }
 
-      const reader = new FileReader();
+      try {
+        const buffer = await file.arrayBuffer();
+        const decoded = decodeTextFromBuffer(buffer);
+        const text = decoded.text;
+        const rows = ext === "json" ? parseJson(text) : parseDelimitedText(text);
 
-      reader.onload = () => {
-        try {
-          const text = String(reader.result || "");
-          const rows = ext === "json" ? parseJson(text) : parseCsv(text);
-
-          if (!rows.length) {
-            showError("הקובץ נקרא, אבל לא נמצאו בו שורות נתונים מתאימות.");
-          }
-
-          setRows(rows, name);
-        } catch (error) {
-          showError("אירעה שגיאה בקריאת הקובץ: " + error.message);
+        if (!rows.length) {
+          showError("הקובץ נקרא, אבל לא נמצאו בו שורות נתונים מתאימות. ודא שיש שורת כותרות ושורות נתונים.");
+        } else {
+          showInfo(`הקובץ נקרא בהצלחה. זוהה קידוד: ${decoded.encoding}`);
         }
-      };
 
-      reader.onerror = () => {
-        showError("הדפדפן לא הצליח לקרוא את הקובץ.");
-      };
-
-      reader.readAsText(file, "utf-8");
+        setRows(rows, name, decoded.encoding);
+      } catch (error) {
+        showError("אירעה שגיאה בקריאת הקובץ: " + error.message);
+      }
     }
 
     uploadArea.addEventListener("click", () => fileInput.click());
