@@ -8,6 +8,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"></script>
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
     <div id="root"></div>
@@ -15,22 +21,23 @@
     <script type="text/babel">
         const { useState, useRef, useEffect, useMemo } = React;
         
-        // אייקונים יציבים המובנים כרכיבי React (מונע שגיאות רינדור)
+        // אייקונים יציבים המובנים כרכיבי React (מונע שגיאות רינדור לחלוטין)
         const Icons = {
             Database: (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>,
             User: (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>,
             X: (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>,
-            Users: (props) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>,
-            Upload: (props) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>,
+            Users: (props) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>,
+            Upload: (props) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>,
             Search: (props) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>,
-            MapPin: (props) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            MapPin: (props) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
         };
 
         function App() {
             const [activeFile, setActiveFile] = useState(null);
             const [fileEncoding, setFileEncoding] = useState('UTF-8');
             const [results, setResults] = useState([]);
-            const [searchTerm, setSearchTerm] = useState({ idNumber: '', firstName: '', lastName: '', city: '' });
+            // הוספת עמודת כתובת לחיפוש
+            const [searchTerm, setSearchTerm] = useState({ idNumber: '', firstName: '', lastName: '', city: '', address: '' });
             const [selectedRecord, setSelectedRecord] = useState(null);
             
             const [isSearching, setIsSearching] = useState(false);
@@ -61,7 +68,6 @@
             const parseLine = (line, id) => {
                 let cleanLine = line.trim();
                 
-                // הסרת הגרשיים שעוטפים את כל השורה כדי לאפשר פיצול תקין
                 if (cleanLine.startsWith("'") && cleanLine.endsWith("'")) {
                     cleanLine = cleanLine.slice(1, -1);
                 } else if (cleanLine.startsWith('"') && cleanLine.endsWith('"')) {
@@ -78,40 +84,30 @@
                 
                 let idNumber = '', firstName = '', lastName = '', city = '', address = '';
                 
-                // מיפוי מדויק לפי מבנה הרשומה:
-                // מזהה פנימי, שם פרטי, שם משפחה, תעודת זהות, עמודה ריקה, כתובת מחוברת
-                // לדוגמה: '8983732','רועי','לוי','300089653','','לוין גוטל 19, חיפה','0','0','false','426'
-                if (parts.length >= 6 && /^\d{7,9}$/.test(parts[3]) && !/^\d+$/.test(parts[1])) {
-                    idNumber = parts[3];
-                    firstName = parts[1] || '';
-                    lastName = parts[2] || '';
+                // חיפוש חכם של תעודת זהות בכל השורה
+                const idCandidate = parts.find(p => /^\d{7,9}$/.test(p) && p.length >= 7);
+                
+                if (idCandidate) {
+                    idNumber = idCandidate;
+                    const otherParts = parts.filter(p => p !== idCandidate);
+                    firstName = otherParts[0] || '';
+                    lastName = otherParts[1] || '';
                     
-                    let fullAddress = parts[5] || '';
-                    if (fullAddress.includes(',')) {
-                        const addrParts = fullAddress.split(',');
+                    const addressPart = parts.find(p => p.includes(','));
+                    if (addressPart) {
+                        const addrParts = addressPart.split(',');
                         address = addrParts[0].trim();
-                        // חולץ את העיר שנמצאת אחרי הפסיק
                         city = addrParts.slice(1).join(',').trim();
                     } else {
-                        address = fullAddress;
-                        city = '';
+                        // אם אין פסיק מובהק, ניקח את העמודות הבאות
+                        city = otherParts[3] || otherParts[2] || '';
+                        address = otherParts[4] || otherParts[3] || '';
                     }
                 } else {
-                    // גיבוי וזיהוי גנרי לפורמטים חלופיים
-                    const preferredIdIndex = parts.length >= 4 && /^\d{7,9}$/.test(parts[3]) ? 3 : -1;
-                    const idIndex = preferredIdIndex !== -1 ? preferredIdIndex : parts.findIndex(p => /^\d{7,9}$/.test(p));
-                    if (idIndex !== -1) {
-                        idNumber = parts[idIndex];
-                        firstName = parts[1] && !/^\d+$/.test(parts[1]) ? parts[1] : (parts[idIndex === 0 ? 1 : 0] || '');
-                        lastName = parts[2] && !/^\d+$/.test(parts[2]) ? parts[2] : (parts[idIndex === 0 ? 2 : 1] || '');
-                        city = parts[idIndex + 1] || '';
-                        address = parts[idIndex + 2] || '';
-                    } else {
-                        firstName = parts[0] || '';
-                        lastName = parts[1] || '';
-                        city = parts[2] || '';
-                        address = parts[3] || '';
-                    }
+                    firstName = parts[1] || parts[0] || '';
+                    lastName = parts[2] || parts[1] || '';
+                    city = parts[4] || parts[3] || '';
+                    address = parts[5] || parts[4] || '';
                 }
 
                 return { id, idNumber, firstName, lastName, city, address };
@@ -132,7 +128,7 @@
                     setFileEncoding(encoding);
                     
                     let offset = 0;
-                    const CHUNK_SIZE = 1024 * 1024 * 5; // הקטנו ל-5MB בסריקה ראשונית למניעת קיפאון
+                    const CHUNK_SIZE = 1024 * 1024 * 5; 
                     let totalLines = 0;
                     let initialResults = [];
                     
@@ -162,7 +158,6 @@
                         setScanProgress(progress);
                         setStatus(`סורק נתונים... ${progress}%`);
                         
-                        // יצירת מרווח זמן לדפדפן כדי למנוע קריסה/קיפאון
                         await new Promise(r => setTimeout(r, 5)); 
                     }
                     
@@ -190,7 +185,6 @@
                     setIsSearching(true);
                     setStatus('מצליב נתונים בתוך הקובץ...');
                     
-                    // מנות קטנות (2MB) מבטיחות שהממשק והחלוניות יישארו מגיבים לחלוטין!
                     const CHUNK_SIZE = 1024 * 1024 * 2; 
                     let offset = 0;
                     let leftover = '';
@@ -230,8 +224,6 @@
                                 }
                             }
                             offset += CHUNK_SIZE;
-                            
-                            // שומר על הממשק מגיב! קריטי בשביל החלונית!
                             await new Promise(r => setTimeout(r, 10)); 
                         }
                         
@@ -252,7 +244,6 @@
                 };
             }, [searchTerm, activeFile, fileEncoding, isScanning]);
 
-            // פונקציית עזר לטיפול בחלונית
             const openRecord = (row) => setSelectedRecord(row);
             const closeRecord = () => setSelectedRecord(null);
 
@@ -262,40 +253,44 @@
                         idNumber: '', 
                         firstName: '', 
                         lastName: selectedRecord.lastName || '', 
-                        city: selectedRecord.city || '' 
+                        city: selectedRecord.city || '',
+                        address: selectedRecord.address || '' // חיפוש מדויק לבני משפחה באותו רחוב
                     });
-                    setSelectedRecord(null); // סוגר החלונית כדי להציג את החיפוש
+                    setSelectedRecord(null); 
                 }
             };
 
             return (
                 <div className="min-h-screen font-sans">
-                    <header className="max-w-6xl mx-auto bg-white p-6 rounded-xl shadow mt-6 mb-6 flex justify-between items-center border border-slate-200">
+                    <header className="max-w-7xl mx-auto bg-white p-5 rounded-2xl shadow-sm mt-6 mb-6 flex flex-col md:flex-row justify-between items-center border border-slate-200 gap-4">
                         <div className="flex flex-col">
-                            <h1 className="text-xl font-bold flex items-center gap-2">
-                                <Icons.Database className="text-blue-600" /> מערכת איתור נתונים
+                            <h1 className="text-2xl font-bold flex items-center gap-3 text-slate-800">
+                                <div className="p-2 bg-blue-100 text-blue-600 rounded-xl">
+                                    <Icons.Database />
+                                </div>
+                                מערכת איתור נתונים
                             </h1>
                             <p className="text-sm text-slate-500 mt-1">{status}</p>
                         </div>
                         <div className="flex items-center gap-6">
                             {totalRecords > 0 && !isScanning && (
-                                <div className="text-right hidden sm:block">
-                                    <p className="text-xs text-slate-500 font-medium">סה"כ רשומות בקובץ</p>
-                                    <p className="text-lg font-mono font-bold text-slate-700">{totalRecords.toLocaleString()}</p>
+                                <div className="text-right hidden md:block px-4 border-r border-slate-200">
+                                    <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">סה"כ רשומות בקובץ</p>
+                                    <p className="text-xl font-mono font-bold text-slate-700">{totalRecords.toLocaleString()}</p>
                                 </div>
                             )}
-                            <button onClick={() => fileInputRef.current.click()} disabled={isScanning} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 transition-colors shadow-sm">
-                                <Icons.Upload /> {activeFile ? 'החלף קובץ' : 'טען קובץ נתונים'}
+                            <button onClick={() => fileInputRef.current.click()} disabled={isScanning} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 text-white px-6 py-3 rounded-xl flex items-center gap-2 transition-all shadow-md font-semibold text-sm">
+                                <Icons.Upload /> {activeFile ? 'החלף נתונים' : 'טען קובץ נתונים'}
                             </button>
                             <input type="file" ref={fileInputRef} className="hidden" accept=".txt,.csv" onChange={handleFileUpload} />
                         </div>
                     </header>
 
-                    <main className="max-w-6xl mx-auto bg-white p-6 rounded-xl shadow border border-slate-200 relative min-h-[500px]">
+                    <main className="max-w-7xl mx-auto bg-white p-6 rounded-2xl shadow-sm border border-slate-200 relative min-h-[600px]">
                         
                         {isScanning && (
-                            <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-20 flex flex-col items-center justify-center rounded-xl">
-                                <div className="w-16 h-16 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin mb-6"></div>
+                            <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-20 flex flex-col items-center justify-center rounded-2xl">
+                                <div className="w-16 h-16 border-4 border-slate-100 border-t-blue-600 rounded-full animate-spin mb-6"></div>
                                 <h3 className="text-2xl font-bold text-slate-800 mb-2">טוען וסורק קובץ...</h3>
                                 <p className="text-slate-500 font-medium mb-6">{status}</p>
                                 <div className="w-64 h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
@@ -305,46 +300,51 @@
                         )}
 
                         {isSearching && !isScanning && (
-                            <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-10 flex items-center justify-center rounded-xl">
-                                <div className="flex flex-col items-center">
-                                    <div className="w-12 h-12 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin"></div>
-                                    <span className="mt-3 font-bold text-blue-600">מחפש נתונים...</span>
+                            <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-10 flex items-center justify-center rounded-2xl transition-all">
+                                <div className="bg-white p-5 rounded-2xl shadow-xl flex items-center gap-4 border border-slate-100">
+                                    <div className="w-8 h-8 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin"></div>
+                                    <span className="font-bold text-slate-700">מחפש נתונים, אנא המתן...</span>
                                 </div>
                             </div>
                         )}
 
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 relative z-0">
-                            <input disabled={isScanning} placeholder="חפש ת.ז" className="p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50" value={searchTerm.idNumber} onChange={e => setSearchTerm({...searchTerm, idNumber: e.target.value})} />
-                            <input disabled={isScanning} placeholder="שם פרטי" className="p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50" value={searchTerm.firstName} onChange={e => setSearchTerm({...searchTerm, firstName: e.target.value})} />
-                            <input disabled={isScanning} placeholder="שם משפחה" className="p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50" value={searchTerm.lastName} onChange={e => setSearchTerm({...searchTerm, lastName: e.target.value})} />
-                            <input disabled={isScanning} placeholder="עיר" className="p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50" value={searchTerm.city} onChange={e => setSearchTerm({...searchTerm, city: e.target.value})} />
+                        {/* עדכון: 5 עמודות חיפוש כולל רחוב */}
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6 relative z-0">
+                            <input disabled={isScanning} placeholder="חפש ת.ז" className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all disabled:opacity-50 text-sm font-medium" value={searchTerm.idNumber} onChange={e => setSearchTerm({...searchTerm, idNumber: e.target.value})} />
+                            <input disabled={isScanning} placeholder="שם פרטי" className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all disabled:opacity-50 text-sm font-medium" value={searchTerm.firstName} onChange={e => setSearchTerm({...searchTerm, firstName: e.target.value})} />
+                            <input disabled={isScanning} placeholder="שם משפחה" className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all disabled:opacity-50 text-sm font-medium" value={searchTerm.lastName} onChange={e => setSearchTerm({...searchTerm, lastName: e.target.value})} />
+                            <input disabled={isScanning} placeholder="עיר" className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all disabled:opacity-50 text-sm font-medium" value={searchTerm.city} onChange={e => setSearchTerm({...searchTerm, city: e.target.value})} />
+                            <input disabled={isScanning} placeholder="רחוב / כתובת" className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all disabled:opacity-50 text-sm font-medium" value={searchTerm.address} onChange={e => setSearchTerm({...searchTerm, address: e.target.value})} />
                         </div>
                         
-                        <div className="overflow-auto h-[500px] border border-slate-200 rounded-lg custom-scrollbar">
+                        <div className="overflow-auto h-[600px] border border-slate-200 rounded-xl custom-scrollbar">
                             <table className="w-full text-right border-collapse">
-                                <thead className="bg-slate-100 sticky top-0 shadow-sm z-0">
+                                <thead className="bg-slate-100 sticky top-0 z-0">
                                     <tr>
-                                        <th className="p-4 text-slate-600 font-semibold border-b">ת.ז</th>
-                                        <th className="p-4 text-slate-600 font-semibold border-b">שם פרטי</th>
-                                        <th className="p-4 text-slate-600 font-semibold border-b">שם משפחה</th>
-                                        <th className="p-4 text-slate-600 font-semibold border-b">עיר</th>
+                                        <th className="p-4 text-slate-600 font-bold border-b border-slate-200 whitespace-nowrap">תעודת זהות</th>
+                                        <th className="p-4 text-slate-600 font-bold border-b border-slate-200 whitespace-nowrap">שם פרטי</th>
+                                        <th className="p-4 text-slate-600 font-bold border-b border-slate-200 whitespace-nowrap">שם משפחה</th>
+                                        <th className="p-4 text-slate-600 font-bold border-b border-slate-200 whitespace-nowrap">עיר</th>
+                                        <th className="p-4 text-slate-600 font-bold border-b border-slate-200 whitespace-nowrap">כתובת</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {results.length === 0 ? (
                                         <tr>
-                                            <td colSpan="4" className="p-12 text-center text-slate-400">
-                                                <Icons.Search className="mx-auto mb-2 opacity-50" size={32} />
-                                                אין נתונים להצגה. טען קובץ ולאחר מכן חפש נתונים.
+                                            <td colSpan="5" className="p-16 text-center text-slate-400">
+                                                <Icons.Search className="mx-auto mb-4 opacity-40" size={48} />
+                                                <p className="text-lg font-medium">אין נתונים להצגה.</p>
+                                                <p className="text-sm mt-1">טען קובץ מבוסס פסיקים ולאחר מכן חפש נתונים.</p>
                                             </td>
                                         </tr>
                                     ) : (
                                         results.map((row, idx) => (
-                                            <tr key={idx} className="border-b border-slate-100 hover:bg-blue-50 cursor-pointer transition-colors" onClick={() => openRecord(row)}>
-                                                <td className="p-4 font-mono text-blue-700">{row.idNumber || '-'}</td>
-                                                <td className="p-4 font-medium">{row.firstName || '-'}</td>
-                                                <td className="p-4 font-medium">{row.lastName || '-'}</td>
+                                            <tr key={idx} className="border-b border-slate-100 hover:bg-blue-50 cursor-pointer transition-colors group" onClick={() => openRecord(row)}>
+                                                <td className="p-4 font-mono text-blue-700 font-medium group-hover:text-blue-800">{row.idNumber || '-'}</td>
+                                                <td className="p-4 font-medium text-slate-800">{row.firstName || '-'}</td>
+                                                <td className="p-4 font-medium text-slate-800">{row.lastName || '-'}</td>
                                                 <td className="p-4 text-slate-600">{row.city || '-'}</td>
+                                                <td className="p-4 text-slate-600">{row.address || '-'}</td>
                                             </tr>
                                         ))
                                     )}
@@ -353,42 +353,60 @@
                         </div>
                     </main>
 
+                    {/* חלונית קופצת (Modal) משודרגת ומעוצבת */}
                     {selectedRecord && (
-                        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in" onClick={closeRecord}>
-                            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl relative" onClick={e => e.stopPropagation()}>
-                                <button className="absolute top-4 left-4 p-2 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-full transition-colors" onClick={closeRecord}><Icons.X /></button>
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in zoom-in-95 duration-200" onClick={closeRecord}>
+                            <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl relative overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
                                 
-                                <div className="flex items-center gap-4 mb-6 border-b pb-4 mt-2">
-                                    <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shrink-0">
-                                        <Icons.User />
+                                {/* אזור כותרת עליון */}
+                                <div className="bg-gradient-to-l from-blue-600 to-indigo-700 p-6 text-white flex items-center gap-5 relative">
+                                    <button className="absolute top-4 left-4 p-2 bg-white/10 text-white hover:bg-white/20 hover:text-white rounded-full transition-all" onClick={closeRecord}>
+                                        <Icons.X />
+                                    </button>
+                                    
+                                    <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center shrink-0 border-2 border-white/30 shadow-inner">
+                                        <Icons.User size={32} />
                                     </div>
                                     <div>
-                                        <h2 className="text-xl font-bold text-slate-800">{selectedRecord.firstName} {selectedRecord.lastName}</h2>
-                                        <span className="text-sm font-mono text-slate-500">{selectedRecord.idNumber}</span>
+                                        <h2 className="text-2xl font-bold mb-1">{selectedRecord.firstName} {selectedRecord.lastName}</h2>
+                                        <div className="inline-block bg-black/20 px-3 py-1 rounded-lg">
+                                            <span className="text-white font-mono text-sm tracking-widest">{selectedRecord.idNumber || 'ללא תעודת זהות'}</span>
+                                        </div>
                                     </div>
                                 </div>
                                 
-                                <div className="space-y-4 mb-6">
-                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                                        <p className="text-xs text-slate-500 mb-1">כתובת מגורים</p>
-                                        <p className="font-medium text-slate-800 flex items-center gap-2">
-                                            <Icons.MapPin className="text-blue-500" />
-                                            {selectedRecord.address || '-'}, {selectedRecord.city || '-'}
-                                        </p>
+                                {/* אזור תוכן מרכזי */}
+                                <div className="p-6">
+                                    <div className="grid grid-cols-2 gap-4 mb-6">
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 shadow-sm">
+                                            <p className="text-xs text-slate-500 mb-1 font-semibold uppercase">עיר מגורים</p>
+                                            <p className="font-bold text-slate-800 text-lg">{selectedRecord.city || '-'}</p>
+                                        </div>
+                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 shadow-sm">
+                                            <p className="text-xs text-slate-500 mb-1 font-semibold uppercase">רחוב / כתובת</p>
+                                            <p className="font-bold text-slate-800 text-lg line-clamp-1" title={selectedRecord.address}>{selectedRecord.address || '-'}</p>
+                                        </div>
                                     </div>
                                     
-                                    {/* מפות גוגל תקינות לחלוטין */}
-                                    <iframe 
-                                        className="w-full h-48 border border-slate-200 rounded-xl shadow-sm" 
-                                        src={`https://maps.google.com/maps?q=${encodeURIComponent((selectedRecord.address || '') + ' ' + (selectedRecord.city || ''))}&t=m&z=17&output=embed`} 
-                                        title="מפת גוגל"
-                                    ></iframe>
+                                    {/* אזור מפה */}
+                                    <div className="mb-8 rounded-xl overflow-hidden border border-slate-200 shadow-sm relative bg-slate-100">
+                                        <div className="absolute top-3 right-3 bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 shadow-sm flex items-center gap-1.5 z-10 pointer-events-none">
+                                            <Icons.MapPin className="text-blue-600" /> מיקום במפה
+                                        </div>
+                                        <iframe 
+                                            className="w-full h-56" 
+                                            src={`https://maps.google.com/maps?q=${encodeURIComponent((selectedRecord.address || '') + ' ' + (selectedRecord.city || ''))}&t=m&z=17&output=embed`} 
+                                            title="מפת גוגל"
+                                            loading="lazy"
+                                        ></iframe>
+                                    </div>
+                                    
+                                    {/* כפתור פעולה חכם */}
+                                    <button className="bg-blue-600 hover:bg-indigo-700 text-white w-full py-4 rounded-xl flex items-center justify-center gap-3 transition-all font-bold text-lg shadow-lg hover:shadow-indigo-500/30" 
+                                            onClick={findFamily}>
+                                        <Icons.Users /> איתור בני משפחה בכתובת זו
+                                    </button>
                                 </div>
-                                
-                                <button className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 w-full py-3 rounded-xl flex items-center justify-center gap-2 transition-colors font-semibold" 
-                                        onClick={findFamily}>
-                                    <Icons.Users /> חפש בני משפחה קשורים
-                                </button>
                             </div>
                         </div>
                     )}
