@@ -8,94 +8,326 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body>
+<body class="bg-slate-50 text-slate-800">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useRef, useMemo } = React;
+        const { useState, useRef, useEffect, useMemo } = React;
         
-        // תיקון הייבוא של האייקונים מהספריה הגלובלית lucide
-        const Database = lucide.Database;
-        const Search = lucide.Search;
-        const User = lucide.User;
-        const X = lucide.X;
-        const MapPin = lucide.MapPin;
-        const Users = lucide.Users;
-        const Upload = lucide.Upload;
+        // אייקונים יציבים
+        const Icons = {
+            Database: (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>,
+            User: (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>,
+            X: (props) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>,
+            Users: (props) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>,
+            Upload: (props) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>,
+            Search: (props) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        };
 
         function App() {
-            const [data, setData] = useState([]);
+            const [activeFile, setActiveFile] = useState(null);
+            const [fileEncoding, setFileEncoding] = useState('UTF-8');
+            const [results, setResults] = useState([]);
             const [searchTerm, setSearchTerm] = useState({ idNumber: '', firstName: '', lastName: '', city: '' });
             const [selectedRecord, setSelectedRecord] = useState(null);
+            
+            // תוספות למעקב וטעינה
+            const [isSearching, setIsSearching] = useState(false);
+            const [isScanning, setIsScanning] = useState(false);
+            const [scanProgress, setScanProgress] = useState(0);
+            const [totalRecords, setTotalRecords] = useState(0);
+            
+            const [status, setStatus] = useState('המערכת מוכנה. טען קובץ כדי להתחיל.');
             const fileInputRef = useRef(null);
 
-            const processFile = (file) => {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const rows = e.target.result.split('\n').filter(l => l.trim()).map((line, i) => {
-                        const [idNumber, firstName, lastName, city, address] = line.split(',');
-                        return { id: i, idNumber: idNumber?.trim(), firstName: firstName?.trim(), lastName: lastName?.trim(), city: city?.trim(), address: address?.trim() };
-                    });
-                    setData(rows);
-                };
-                reader.readAsText(file);
+            const detectEncoding = async (file) => {
+                const chunk = file.slice(0, 50000); 
+                const buffer = await new Promise(res => {
+                    const r = new FileReader();
+                    r.onload = ev => res(ev.target.result);
+                    r.readAsArrayBuffer(chunk);
+                });
+                try {
+                    const decoderUtf8 = new TextDecoder('utf-8', { fatal: true });
+                    const textUtf8 = decoderUtf8.decode(buffer);
+                    if (/[\u0590-\u05FF]/.test(textUtf8)) return 'UTF-8';
+                } catch (e) {
+                    return 'windows-1255'; 
+                }
+                return 'windows-1255'; 
             };
 
-            const filteredData = useMemo(() => {
-                return data.filter(item => 
-                    (searchTerm.idNumber === '' || item.idNumber?.includes(searchTerm.idNumber)) &&
-                    (searchTerm.firstName === '' || item.firstName?.includes(searchTerm.firstName)) &&
-                    (searchTerm.lastName === '' || item.lastName?.includes(searchTerm.lastName)) &&
-                    (searchTerm.city === '' || item.city?.includes(searchTerm.city))
-                );
-            }, [data, searchTerm]);
+            const parseLine = (line, id) => {
+                const sep = line.includes("','") ? "','" : (line.includes("\t") ? "\t" : (line.includes(";") ? ";" : ","));
+                const parts = line.split(sep).map(p => p.replace(/^['"]|['"]$/g, '').trim());
+                
+                let idNumber = '', firstName = '', lastName = '', city = '', address = '';
+                
+                if (parts[0] && /^\d{8,9}$/.test(parts[0])) {
+                    idNumber = parts[0]; firstName = parts[1]; lastName = parts[2]; city = parts[3]; address = parts[4];
+                } else if (parts[3] && /^\d{8,9}$/.test(parts[3])) {
+                    idNumber = parts[3]; firstName = parts[1]; lastName = parts[2]; city = parts[4]; address = parts[5];
+                } else {
+                    idNumber = parts.find(p => /^\d{8,9}$/.test(p)) || parts[3] || parts[0] || '';
+                    firstName = parts[1] || ''; lastName = parts[2] || ''; city = parts[4] || parts[3] || ''; address = parts[5] || parts[4] || '';
+                }
+
+                return { id, idNumber, firstName, lastName, city, address };
+            };
+
+            const handleFileUpload = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                setIsScanning(true);
+                setScanProgress(0);
+                setTotalRecords(0);
+                setStatus('מנתח קובץ ומזהה קידוד...');
+                setActiveFile(file);
+                
+                try {
+                    const encoding = await detectEncoding(file);
+                    setFileEncoding(encoding);
+                    
+                    let offset = 0;
+                    const CHUNK_SIZE = 1024 * 1024 * 10; // קורא 10MB בכל פעימה
+                    let totalLines = 0;
+                    let initialResults = [];
+                    
+                    while (offset < file.size) {
+                        const chunk = file.slice(offset, offset + CHUNK_SIZE);
+                        const text = await new Promise(res => {
+                            const r = new FileReader();
+                            r.onload = ev => res(ev.target.result);
+                            r.readAsText(chunk, encoding);
+                        });
+                        
+                        // קורא ומציג את השורות הראשונות של הקובץ לתצוגה מקדימה
+                        if (offset === 0) {
+                            const lines = text.split(/\r?\n/).filter(l => l.trim());
+                            for(let i=0; i < Math.min(lines.length, 100); i++) {
+                                initialResults.push(parseLine(lines[i], i));
+                            }
+                            setResults(initialResults);
+                        }
+                        
+                        // סופר במהירות שורות (עבור נתונים גדולים)
+                        let i = -1;
+                        while ((i = text.indexOf('\n', i + 1)) !== -1) {
+                            totalLines++;
+                        }
+                        
+                        offset += CHUNK_SIZE;
+                        const progress = Math.min(100, Math.round((offset / file.size) * 100));
+                        setScanProgress(progress);
+                        setStatus(`סורק נתונים ומכין רשומות... ${progress}%`);
+                        await new Promise(r => setTimeout(r, 0)); // מאפשר ל-UI להתעדכן
+                    }
+                    
+                    // מכיוון שיכולה להיות שורה ללא ירידת שורה בסוף:
+                    if (totalLines === 0 && initialResults.length > 0) totalLines = initialResults.length;
+                    
+                    setTotalRecords(totalLines);
+                    setStatus(`קובץ נטען בהצלחה (${encoding}). סה"כ ${totalLines.toLocaleString()} רשומות.`);
+                } catch (error) {
+                    setStatus('שגיאה בטעינת הקובץ.');
+                    console.error(error);
+                } finally {
+                    setIsScanning(false);
+                    if(fileInputRef.current) fileInputRef.current.value = '';
+                }
+            };
+
+            useEffect(() => {
+                if (!activeFile || isScanning) return;
+
+                const activeTerms = Object.values(searchTerm).filter(v => v.trim() !== '').map(v => v.toLowerCase());
+                if (activeTerms.length === 0) return;
+
+                let isCancelled = false;
+                const timer = setTimeout(async () => {
+                    setIsSearching(true);
+                    setStatus('מצליב נתונים בתוך הקובץ...');
+                    
+                    const CHUNK_SIZE = 1024 * 1024 * 15; 
+                    let offset = 0;
+                    let leftover = '';
+                    const found = [];
+                    let rowId = 0;
+
+                    try {
+                        while (offset < activeFile.size && found.length < 200) {
+                            if (isCancelled) break;
+                            
+                            const chunk = activeFile.slice(offset, offset + CHUNK_SIZE);
+                            const text = await new Promise(res => {
+                                const r = new FileReader();
+                                r.onload = e => res(e.target.result);
+                                r.readAsText(chunk, fileEncoding);
+                            });
+
+                            const lines = (leftover + text).split(/\r?\n/);
+                            leftover = lines.pop(); 
+
+                            for (let i = 0; i < lines.length; i++) {
+                                const line = lines[i];
+                                if (!line.trim()) continue;
+                                const lowerLine = line.toLowerCase();
+                                
+                                let isMatch = true;
+                                for (let t of activeTerms) {
+                                    if (!lowerLine.includes(t)) {
+                                        isMatch = false;
+                                        break;
+                                    }
+                                }
+
+                                if (isMatch) {
+                                    found.push(parseLine(line, rowId++));
+                                    if (found.length >= 200) break; 
+                                }
+                            }
+                            offset += CHUNK_SIZE;
+                        }
+                        
+                        if (!isCancelled) {
+                            setResults(found);
+                            setStatus(found.length > 0 ? `נמצאו ${found.length} התאמות.` : 'לא נמצאו תוצאות.');
+                        }
+                    } catch (err) {
+                        setStatus('שגיאה במהלך החיפוש.');
+                    } finally {
+                        if (!isCancelled) setIsSearching(false);
+                    }
+                }, 500); 
+
+                return () => {
+                    isCancelled = true;
+                    clearTimeout(timer);
+                };
+            }, [searchTerm, activeFile, fileEncoding, isScanning]);
 
             return (
-                <div className="min-h-screen bg-slate-50 p-6 font-sans">
-                    <header className="max-w-6xl mx-auto bg-white p-6 rounded-xl shadow mb-6 flex justify-between items-center">
-                        <h1 className="text-xl font-bold flex items-center gap-2"><Database className="text-blue-600" /> מערכת איתור נתונים</h1>
-                        <button onClick={() => fileInputRef.current.click()} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2">
-                            <Upload size={18} /> טען קובץ CSV
-                        </button>
-                        <input type="file" ref={fileInputRef} className="hidden" onChange={(e) => processFile(e.target.files[0])} />
+                <div className="min-h-screen font-sans">
+                    <header className="max-w-6xl mx-auto bg-white p-6 rounded-xl shadow mt-6 mb-6 flex justify-between items-center border border-slate-200">
+                        <div className="flex flex-col">
+                            <h1 className="text-xl font-bold flex items-center gap-2">
+                                <Icons.Database className="text-blue-600" /> מערכת איתור נתונים
+                            </h1>
+                            <p className="text-sm text-slate-500 mt-1">{status}</p>
+                        </div>
+                        <div className="flex items-center gap-6">
+                            {totalRecords > 0 && !isScanning && (
+                                <div className="text-right hidden sm:block">
+                                    <p className="text-xs text-slate-500 font-medium">סה"כ רשומות בקובץ</p>
+                                    <p className="text-lg font-mono font-bold text-slate-700">{totalRecords.toLocaleString()}</p>
+                                </div>
+                            )}
+                            <button onClick={() => fileInputRef.current.click()} disabled={isScanning} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 transition-colors shadow-sm">
+                                <Icons.Upload /> {activeFile ? 'החלף קובץ' : 'טען קובץ נתונים'}
+                            </button>
+                            <input type="file" ref={fileInputRef} className="hidden" accept=".txt,.csv" onChange={handleFileUpload} />
+                        </div>
                     </header>
 
-                    <main className="max-w-6xl mx-auto bg-white p-6 rounded-xl shadow">
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                            <input placeholder="ת.ז" className="p-2 border rounded" onChange={e => setSearchTerm({...searchTerm, idNumber: e.target.value})} />
-                            <input placeholder="שם פרטי" className="p-2 border rounded" onChange={e => setSearchTerm({...searchTerm, firstName: e.target.value})} />
-                            <input placeholder="שם משפחה" className="p-2 border rounded" onChange={e => setSearchTerm({...searchTerm, lastName: e.target.value})} />
-                            <input placeholder="עיר" className="p-2 border rounded" onChange={e => setSearchTerm({...searchTerm, city: e.target.value})} />
+                    <main className="max-w-6xl mx-auto bg-white p-6 rounded-xl shadow border border-slate-200 relative min-h-[500px]">
+                        
+                        {/* מסך טעינת הקובץ הראשונית */}
+                        {isScanning && (
+                            <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-20 flex flex-col items-center justify-center rounded-xl">
+                                <div className="w-16 h-16 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin mb-6"></div>
+                                <h3 className="text-2xl font-bold text-slate-800 mb-2">טוען וסורק קובץ...</h3>
+                                <p className="text-slate-500 font-medium mb-6">{status}</p>
+                                <div className="w-64 h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                                    <div className="h-full bg-blue-600 transition-all duration-200" style={{ width: `${scanProgress}%` }}></div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* הצללה בזמן חיפוש */}
+                        {isSearching && !isScanning && (
+                            <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-10 flex items-center justify-center rounded-xl">
+                                <div className="flex flex-col items-center">
+                                    <div className="w-12 h-12 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin"></div>
+                                    <span className="mt-3 font-bold text-blue-600">מחפש נתונים...</span>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 relative z-0">
+                            <input disabled={isScanning} placeholder="חפש ת.ז" className="p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50" value={searchTerm.idNumber} onChange={e => setSearchTerm({...searchTerm, idNumber: e.target.value})} />
+                            <input disabled={isScanning} placeholder="שם פרטי" className="p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50" value={searchTerm.firstName} onChange={e => setSearchTerm({...searchTerm, firstName: e.target.value})} />
+                            <input disabled={isScanning} placeholder="שם משפחה" className="p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50" value={searchTerm.lastName} onChange={e => setSearchTerm({...searchTerm, lastName: e.target.value})} />
+                            <input disabled={isScanning} placeholder="עיר" className="p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:opacity-50" value={searchTerm.city} onChange={e => setSearchTerm({...searchTerm, city: e.target.value})} />
                         </div>
-                        <div className="overflow-auto h-[500px] border rounded-lg">
+                        
+                        <div className="overflow-auto h-[500px] border border-slate-200 rounded-lg">
                             <table className="w-full text-right border-collapse">
-                                <thead className="bg-slate-100 sticky top-0">
-                                    <tr><th className="p-3">ת.ז</th><th className="p-3">שם פרטי</th><th className="p-3">שם משפחה</th><th className="p-3">עיר</th></tr>
+                                <thead className="bg-slate-100 sticky top-0 shadow-sm z-0">
+                                    <tr>
+                                        <th className="p-4 text-slate-600 font-semibold border-b">ת.ז</th>
+                                        <th className="p-4 text-slate-600 font-semibold border-b">שם פרטי</th>
+                                        <th className="p-4 text-slate-600 font-semibold border-b">שם משפחה</th>
+                                        <th className="p-4 text-slate-600 font-semibold border-b">עיר</th>
+                                    </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredData.map(row => (
-                                        <tr key={row.id} className="border-t hover:bg-blue-50 cursor-pointer" onClick={() => setSelectedRecord(row)}>
-                                            <td className="p-3">{row.idNumber}</td><td className="p-3">{row.firstName}</td><td className="p-3">{row.lastName}</td><td className="p-3">{row.city}</td>
+                                    {results.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="4" className="p-12 text-center text-slate-400">
+                                                <Icons.Search className="mx-auto mb-2 opacity-50" size={32} />
+                                                אין נתונים להצגה. טען קובץ ולאחר מכן חפש נתונים.
+                                            </td>
                                         </tr>
-                                    ))}
+                                    ) : (
+                                        results.map((row, idx) => (
+                                            <tr key={idx} className="border-b border-slate-100 hover:bg-blue-50 cursor-pointer transition-colors" onClick={() => setSelectedRecord(row)}>
+                                                <td className="p-4 font-mono text-blue-700">{row.idNumber || '-'}</td>
+                                                <td className="p-4 font-medium">{row.firstName || '-'}</td>
+                                                <td className="p-4 font-medium">{row.lastName || '-'}</td>
+                                                <td className="p-4 text-slate-600">{row.city || '-'}</td>
+                                            </tr>
+                                        ))
+                                    )}
                                 </tbody>
                             </table>
                         </div>
                     </main>
 
                     {selectedRecord && (
-                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setSelectedRecord(null)}>
-                            <div className="bg-white rounded-xl p-6 w-96 relative shadow-2xl" onClick={e => e.stopPropagation()}>
-                                <button className="absolute top-2 left-2 p-1" onClick={() => setSelectedRecord(null)}><X /></button>
-                                <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><User /> {selectedRecord.firstName} {selectedRecord.lastName}</h2>
-                                <p className="mb-1"><strong>ת.ז:</strong> {selectedRecord.idNumber}</p>
-                                <p className="mb-4"><strong>כתובת:</strong> {selectedRecord.address}, {selectedRecord.city}</p>
-                                <iframe className="w-full h-40 mt-2 border rounded" src={`https://maps.google.com/maps?q=${encodeURIComponent(selectedRecord.address + ', ' + selectedRecord.city)}&output=embed`} />
-                                <button className="mt-4 bg-blue-600 text-white w-full py-2 rounded flex items-center justify-center gap-2" 
-                                        onClick={() => {setSearchTerm({...searchTerm, lastName: selectedRecord.lastName}); setSelectedRecord(null)}}>
-                                    <Users size={18} /> חפש בני משפחה
+                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in" onClick={() => setSelectedRecord(null)}>
+                            <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl relative" onClick={e => e.stopPropagation()}>
+                                <button className="absolute top-4 left-4 p-2 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-full transition-colors" onClick={() => setSelectedRecord(null)}><Icons.X /></button>
+                                
+                                <div className="flex items-center gap-4 mb-6 border-b pb-4">
+                                    <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shrink-0">
+                                        <Icons.User />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-800">{selectedRecord.firstName} {selectedRecord.lastName}</h2>
+                                        <span className="text-sm font-mono text-slate-500">{selectedRecord.idNumber}</span>
+                                    </div>
+                                </div>
+                                
+                                <div className="space-y-4 mb-6">
+                                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                        <p className="text-xs text-slate-500 mb-1">כתובת מגורים מלאה</p>
+                                        <p className="font-medium text-slate-800 flex items-center gap-2">
+                                            <Icons.MapPin size={16} className="text-blue-500" />
+                                            {selectedRecord.address}, {selectedRecord.city}
+                                        </p>
+                                    </div>
+                                    
+                                    <iframe 
+                                        className="w-full h-48 border border-slate-200 rounded-xl shadow-sm" 
+                                        src={`https://maps.google.com/maps?q=${encodeURIComponent((selectedRecord.address || '') + ', ' + (selectedRecord.city || ''))}&output=embed`} 
+                                    />
+                                </div>
+                                
+                                <button className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 w-full py-3 rounded-xl flex items-center justify-center gap-2 transition-colors font-semibold" 
+                                        onClick={() => {setSearchTerm({ idNumber: '', firstName: '', lastName: selectedRecord.lastName, city: '' }); setSelectedRecord(null)}}>
+                                    <Icons.Users size={18} /> חפש בני משפחה קשורים
                                 </button>
                             </div>
                         </div>
